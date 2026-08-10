@@ -8,17 +8,37 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Fetch initial active session on load
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
+    const initAuth = async () => {
+      // Check if the user had an active session flag in the current tab/window session
+      const isSessionActive = sessionStorage.getItem("is_logged_in");
 
-    // 2. Listen to realtime auth status changes
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      // If a Supabase session exists but the session flag is missing, force sign out
+      if (session && !isSessionActive) {
+        await supabase.auth.signOut();
+        setSession(null);
+      } else {
+        setSession(session);
+      }
+
+      setLoading(false);
+    };
+
+    initAuth();
+
+    // Listen to auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (session) {
+        sessionStorage.setItem("is_logged_in", "true");
+      } else {
+        sessionStorage.removeItem("is_logged_in");
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -27,12 +47,18 @@ export default function App() {
   // Handle explicit sign-out and state clear
   const handleLogout = async () => {
     try {
+      sessionStorage.removeItem("is_logged_in");
       await supabase.auth.signOut();
     } catch (err) {
       console.error("Signout error:", err);
     } finally {
       setSession(null);
     }
+  };
+
+  const handleLoginSuccess = (sess) => {
+    sessionStorage.setItem("is_logged_in", "true");
+    setSession(sess);
   };
 
   if (loading) {
@@ -55,7 +81,7 @@ export default function App() {
       {session ? (
         <DashboardPage session={session} onLogout={handleLogout} />
       ) : (
-        <LoginPage onLoginSuccess={(sess) => setSession(sess)} />
+        <LoginPage onLoginSuccess={handleLoginSuccess} />
       )}
     </div>
   );
