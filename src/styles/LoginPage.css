@@ -1,0 +1,303 @@
+/* Base Root Container */
+.login-root {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* LEFT PANEL */
+.login-left {
+    width: 50%;
+    background: linear-gradient(160deg, #7b1a1a 0%, #5a1010 60%, #3d0808 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px;
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.login-brand {
+    text-align: center;
+    color: white;
+    z-index: 10;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* LOGO CONTAINER & PULSING RINGS */
+.login-seal-wrapper {
+    position: relative;
+    width: 380px;
+    height: 380px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 24px;
+}
+
+/* Pulsing Rings Animations (Expands all the way to container edge) */
+.pulse-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 380px;
+    height: 380px;
+    margin-top: -190px;
+    margin-left: -190px;
+    border-radius: 50%;
+    border: 2px solid rgba(245, 197, 24, 0.45);
+    pointer-events: none;
+    animation: pulse-expand 4s infinite cubic-bezier(0.1, 0.4, 0.3, 1);
+}
+
+.ring-1 {
+    animation-delay: 0s;
+}
+
+.ring-2 {
+    animation-delay: 1.33s;
+}
+
+.ring-3 {
+    animation-delay: 2.66s;
+}
+
+@keyframes pulse-expand {
+    0% {
+        transform: scale(0.95);
+        opacity: 0.9;
+        border-color: rgba(245, 197, 24, 0.6);
+    }
+
+    50% {
+        opacity: 0.4;
+    }
+
+    100% {
+        transform: scale(3.5);
+        opacity: 0;
+        border-color: rgba(245, 197, 24, 0);
+    }
+}
+
+/* Main Seal Graphic Container (Clean, no background circle/shadow box) */
+.login-seal {
+    width: 380px;
+    height: 380px;
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    box-shadow: none;
+}
+
+.login-seal img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    /* Drop shadow adhering strictly to seal graphic outlines */
+    filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.35));
+}
+
+.login-school {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #f5c518;
+    letter-spacing: .01em;
+    line-height: 1.3;
+    margin: 0 0 8px 0;
+}
+
+.login-sub {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.85);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    margin: 0 0 20px 0;
+}
+
+.login-tagline {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    border-top: 1px solid rgba(245, 197, 24, 0.25);
+    padding-top: 16px;
+    letter-spacing: .02em;
+    line-height: 1.5;
+    margin: 0;
+    width: 100%;
+}
+
+/* RIGHT PANEL */
+.login-right {
+    flex: 1;
+    background: #faf8f6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    overflow-y: auto;
+    box-sizing: border-box;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 380px;
+    background: white;
+    border-radius: 18px;
+    padding: 36px 32px;
+    box-shadow: 0 8px 40px rgba(123, 26, 26, 0.12);
+    box-sizing: border-box;
+}
+
+.lc-header {
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.lc-header h1 {
+    font-size: 1.4rem;
+    font-weight: 900;
+    color: #7b1a1a;
+    margin: 0 0 4px 0;
+}
+
+.lc-header p {
+    font-size: 0.78rem;
+    color: #7a6060;
+    margin: 0;
+}
+
+/* Forms & Inputs */
+.lf-group {
+    margin-bottom: 16px;
+}
+
+.lf-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.lf-group label {
+    display: block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #7a6060;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 6px;
+}
+
+.lf-group input {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1.5px solid #e8ddd8;
+    border-radius: 9px;
+    font-size: 0.88rem;
+    color: #1a0a0a;
+    outline: none;
+    transition: border .2s, box-shadow .2s;
+    background: #faf8f6;
+    box-sizing: border-box;
+}
+
+.lf-group input:focus {
+    border-color: #7b1a1a;
+    box-shadow: 0 0 0 3px rgba(123, 26, 26, 0.08);
+    background: white;
+}
+
+.lf-error {
+    font-size: 0.75rem;
+    color: #991b1b;
+    background: #fee2e2;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    border: 1px solid #fca5a5;
+}
+
+.lf-btn {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(135deg, #7b1a1a, #5a1010);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+    transition: opacity .2s, transform .1s;
+    cursor: pointer;
+    margin-top: 8px;
+}
+
+.lf-btn:hover:not(:disabled) {
+    opacity: .92;
+    transform: translateY(-1px);
+}
+
+.lf-btn:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
+
+.lc-footer {
+    text-align: center;
+    font-size: 0.75rem;
+    color: #7a6060;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #f0e8e8;
+}
+
+.lc-footer-btn {
+    background: none;
+    border: none;
+    color: #7b1a1a;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.75rem;
+}
+
+.lc-footer-btn:hover {
+    text-decoration: underline;
+}
+
+/* Version badge */
+.login-version {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.35);
+    letter-spacing: .08em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Mobile Responsive */
+@media (max-width: 900px) {
+    .login-left {
+        display: none;
+    }
+
+    .login-right {
+        padding: 20px;
+    }
+}
