@@ -1,371 +1,82 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import iecesLogo from "../image/ieceslogo.png";
-import "../styles/DashboardPage.css";
-import { EnrollmentForm } from "./EnrollmentForm";
-import { EnrollmentDataTab } from "./EnrollmentDataTab";
-import { AdvisoryClass } from "./AdvisoryClass";
 
-export default function DashboardPage({ session, userSession, onLogout }) {
-  const [activeTab, setActiveTab] = useState("enrollment");
-  const [profile, setProfile] = useState(null);
+export function AdvisoryClass({ profile }) {
+  const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(null); // studentId being saved
+  const [message, setMessage] = useState("");
 
-  const activeSession = session || userSession;
-
-  useEffect(() => {
-    fetchProfile();
-  }, [activeSession]);
-
-  const fetchProfile = async () => {
-    try {
-      const currentUserId = activeSession?.user?.id;
-      if (!currentUserId) {
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", currentUserId)
-        .single();
-
-      if (!error && data) {
-        setProfile(data);
-      }
-    } catch (err) {
-      console.error("Error fetching user profile:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSignOutClick = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.error("Error during sign out:", err);
-    } finally {
-      if (typeof onLogout === "function") {
-        onLogout();
-      }
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="dash-loading-screen">
-        <div className="dash-spinner"></div>
-        <p>Loading IECES Portal...</p>
-      </div>
-    );
-  }
-
-  const isAdviser =
-    profile?.role === "adviser" || profile?.role === "grade_chairman";
   const isGradeChairman = profile?.role === "grade_chairman";
 
-  return (
-    <div className="dash-root">
-      {/* Top Header */}
-      <header className="dash-header">
-        <div className="dash-header-brand">
-          <img src={iecesLogo} alt="IECES Logo" className="dash-logo" />
-          <div>
-            <h1>IECES PORTAL</h1>
-            <p>Isabela East Central Elementary School</p>
-          </div>
-        </div>
-
-        <div className="dash-header-user">
-          <div className="user-details">
-            <span className="user-name">
-              {profile?.first_name || profile?.full_name || "User"}{" "}
-              {profile?.family_name || ""}
-            </span>
-            <span className="user-role">
-              {profile?.role ? profile.role.replace("_", " ") : "Teacher"}
-            </span>
-          </div>
-          <button onClick={handleSignOutClick} className="dash-logout-btn">
-            Sign Out
-          </button>
-        </div>
-      </header>
-
-      <div className="dash-body">
-        {/* Navigation Sidebar */}
-        <nav className="dash-sidebar">
-          <div className="sidebar-menu">
-            <button
-              className={`nav-item ${activeTab === "enrollment" ? "active" : ""}`}
-              onClick={() => setActiveTab("enrollment")}
-            >
-              <span className="nav-icon">📝</span> Enrolment
-            </button>
-
-            {isAdviser && (
-              <button
-                className={`nav-item ${activeTab === "advisory" ? "active" : ""}`}
-                onClick={() => setActiveTab("advisory")}
-              >
-                <span className="nav-icon">👨‍🏫</span> Advisory List
-              </button>
-            )}
-
-            <button
-              className={`nav-item ${activeTab === "data" ? "active" : ""}`}
-              onClick={() => setActiveTab("data")}
-            >
-              <span className="nav-icon">📊</span> Enrolment Data
-            </button>
-
-            <button
-              className={`nav-item ${activeTab === "advisory_class" ? "active" : ""}`}
-              onClick={() => setActiveTab("advisory_class")}
-            >
-              <span className="nav-icon">🏫</span> Advisory Class
-            </button>
-
-            {/* TRANSFER LEARNER TAB - SHOWN ONLY TO GRADE CHAIRMAN */}
-            {isGradeChairman && (
-              <button
-                className={`nav-item ${activeTab === "transfer_learner" ? "active" : ""}`}
-                onClick={() => setActiveTab("transfer_learner")}
-              >
-                <span className="nav-icon">🔄</span> Transfer Learner
-              </button>
-            )}
-
-            <button
-              className={`nav-item ${activeTab === "search" ? "active" : ""}`}
-              onClick={() => setActiveTab("search")}
-            >
-              <span className="nav-icon">🔍</span> Search Learner
-            </button>
-          </div>
-        </nav>
-
-        {/* Content Panel Area */}
-        <main className="dash-content">
-          {activeTab === "enrollment" && <EnrollmentForm />}
-          {activeTab === "advisory" && isAdviser && (
-            <AdvisoryListTab
-              profile={profile}
-              isGradeChairman={isGradeChairman}
-            />
-          )}
-          {activeTab === "data" && <EnrollmentDataTab />}
-          {activeTab === "advisory_class" && <AdvisoryClass />}
-          {activeTab === "transfer_learner" && isGradeChairman && (
-            <TransferLearnerTab profile={profile} />
-          )}
-          {activeTab === "search" && <SearchTab />}
-        </main>
-      </div>
-    </div>
-  );
-}
-
-// ── TRANSFER LEARNER TAB (GRADE CHAIRMAN ONLY) ──────────────────────────────
-function TransferLearnerTab({ profile }) {
-  const [students, setStudents] = useState([]);
-  const [advisers, setAdvisers] = useState([]);
-  const [loading, setLoading] = useState(true);
-
   useEffect(() => {
-    fetchData();
-  }, [profile]);
+    fetchStudents();
 
-  const fetchData = async () => {
-    setLoading(true);
-    const gradeLevel = profile?.grade_level_assigned;
-
-    // Fetch advisers assigned to this grade level
-    const { data: adviserData } = await supabase
-      .from("profiles")
-      .select("id, first_name, family_name, section_assigned")
-      .eq("grade_level_assigned", gradeLevel);
-
-    if (adviserData) setAdvisers(adviserData);
-
-    // Fetch students in this grade level
-    const { data: studentData } = await supabase
-      .from("students")
-      .select("*")
-      .eq("grade_level", gradeLevel)
-      .order("family_name", { ascending: true });
-
-    if (studentData) setStudents(studentData);
-    setLoading(false);
-  };
-
-  const handleTransfer = async (studentId, newAdviserId) => {
-    const { error } = await supabase
-      .from("students")
-      .update({ adviser_id: newAdviserId || null })
-      .eq("id", studentId);
-
-    if (!error) {
-      setStudents((prev) =>
-        prev.map((s) =>
-          s.id === studentId ? { ...s, adviser_id: newAdviserId || null } : s,
-        ),
-      );
-    } else {
-      console.error("Error transferring student:", error);
-    }
-  };
-
-  return (
-    <div className="dash-card">
-      <div className="dash-card-header">
-        <h2>Transfer Learner Section Assignment</h2>
-        <p>
-          Grade {profile?.grade_level_assigned} Chairman Controls: Reassign
-          learners to different advisers/sections.
-        </p>
-      </div>
-
-      {loading ? (
-        <p className="py-6 text-center text-slate-500">Loading learners...</p>
-      ) : (
-        <div className="dash-table-wrapper">
-          <table className="dash-table">
-            <thead>
-              <tr>
-                <th>LRN</th>
-                <th>Learner Name</th>
-                <th>Gender</th>
-                <th>Current Section / Adviser</th>
-                <th>Reassign To</th>
-              </tr>
-            </thead>
-            <tbody>
-              {students.length === 0 ? (
-                <tr>
-                  <td colSpan="5" style={{ textAlign: "center" }}>
-                    No learners found for Grade {profile?.grade_level_assigned}.
-                  </td>
-                </tr>
-              ) : (
-                students.map((st) => {
-                  const currentAdviser = advisers.find(
-                    (a) => a.id === st.adviser_id,
-                  );
-
-                  return (
-                    <tr key={st.id}>
-                      <td className="font-mono">{st.lrn || "—"}</td>
-                      <td className="font-bold">
-                        {st.family_name}, {st.first_name} {st.middle_name || ""}
-                      </td>
-                      <td>{st.gender}</td>
-                      <td>
-                        {currentAdviser ? (
-                          <span>
-                            {currentAdviser.family_name},{" "}
-                            {currentAdviser.first_name}{" "}
-                            {currentAdviser.section_assigned
-                              ? `(${currentAdviser.section_assigned})`
-                              : ""}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 italic">
-                            Unassigned
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <select
-                          value={st.adviser_id || ""}
-                          onChange={(e) =>
-                            handleTransfer(st.id, e.target.value)
-                          }
-                          className="table-select highlight"
-                        >
-                          <option value="">-- Select Adviser --</option>
-                          {advisers.map((adv) => (
-                            <option key={adv.id} value={adv.id}>
-                              {adv.family_name}, {adv.first_name}{" "}
-                              {adv.section_assigned
-                                ? `(${adv.section_assigned})`
-                                : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── MY ADVISORY LIST TAB (FOR ASSIGNED TEACHERS) ──────────────────────────
-function AdvisoryListTab({ profile, isGradeChairman }) {
-  const [students, setStudents] = useState([]);
-  const [otherAdvisers, setOtherAdvisers] = useState([]);
-
-  useEffect(() => {
-    fetchAdvisoryStudents();
-    if (isGradeChairman) fetchGradeAdvisers();
-
+    // Realtime sync
     const channel = supabase
-      .channel("students_sync")
+      .channel("advisory_class_sync")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "students" },
-        () => {
-          fetchAdvisoryStudents();
-        },
+        () => fetchStudents()
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => supabase.removeChannel(channel);
   }, [profile]);
 
-  const fetchAdvisoryStudents = async () => {
-    let query = supabase.from("students").select("*");
-    if (!isGradeChairman) {
-      query = query.eq("adviser_id", profile?.id);
-    } else {
-      query = query.eq("grade_level", profile?.grade_level_assigned);
+  const fetchStudents = async () => {
+    if (!profile?.id) {
+      setLoading(false);
+      return;
     }
-    const { data } = await query.order("family_name", { ascending: true });
-    if (data) setStudents(data);
+
+    setLoading(true);
+    let query = supabase.from("students").select("*");
+
+    if (isGradeChairman) {
+      query = query.eq("grade_level", profile.grade_level_assigned);
+    } else {
+      query = query.eq("adviser_id", profile.id);
+    }
+
+    const { data, error } = await query.order("family_name", {
+      ascending: true,
+    });
+
+    if (!error && data) setStudents(data);
+    setLoading(false);
   };
 
-  const fetchGradeAdvisers = async () => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("id, first_name, family_name, section_assigned")
-      .eq("grade_level_assigned", profile?.grade_level_assigned);
-    if (data) setOtherAdvisers(data);
-  };
+  const handleReadingLevelChange = async (studentId, readingLevel) => {
+    setSaving(studentId);
+    setMessage("");
 
-  const handleTransfer = async (studentId, newAdviserId) => {
-    await supabase
-      .from("students")
-      .update({ adviser_id: newAdviserId })
-      .eq("id", studentId);
-    fetchAdvisoryStudents();
-  };
-
-  const handleReadingCategoryChange = async (studentId, readingLevel) => {
-    await supabase
+    const { error } = await supabase
       .from("students")
       .update({ reading_level: readingLevel })
       .eq("id", studentId);
-    fetchAdvisoryStudents();
+
+    if (error) {
+      setMessage("Failed to update reading level. Please try again.");
+    } else {
+      setMessage("Reading level updated.");
+      setTimeout(() => setMessage(""), 2500);
+      fetchStudents();
+    }
+
+    setSaving(null);
+  };
+
+  // Count breakdown
+  const maleCount = students.filter((s) => s.gender === "Male").length;
+  const femaleCount = students.filter((s) => s.gender === "Female").length;
+
+  const readingBreakdown = {
+    "Non-Reader": students.filter((s) => (s.reading_level || "Non-Reader") === "Non-Reader").length,
+    Frustration: students.filter((s) => s.reading_level === "Frustration").length,
+    Instructional: students.filter((s) => s.reading_level === "Instructional").length,
+    Independent: students.filter((s) => s.reading_level === "Independent").length,
   };
 
   return (
@@ -373,171 +84,126 @@ function AdvisoryListTab({ profile, isGradeChairman }) {
       <div className="dash-card-header">
         <h2>
           {isGradeChairman
-            ? `Grade ${profile?.grade_level_assigned} Overview (Grade Chairman)`
-            : "My Advisory Learners"}
+            ? `Grade ${profile?.grade_level_assigned} — All Sections`
+            : `Advisory Class — ${profile?.section_assigned || "My Section"}`}
         </h2>
-        <p>Total Enrolled: {students.length} Learners</p>
-      </div>
-
-      <div className="dash-table-wrapper">
-        <table className="dash-table">
-          <thead>
-            <tr>
-              <th>LRN</th>
-              <th>Learner Name</th>
-              <th>Gender</th>
-              <th>Reading Level</th>
-              {isGradeChairman && <th>Transfer Advisory</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {students.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={isGradeChairman ? "5" : "4"}
-                  style={{ textAlign: "center" }}
-                >
-                  No learners assigned yet.
-                </td>
-              </tr>
-            ) : (
-              students.map((st) => (
-                <tr key={st.id}>
-                  <td className="font-mono">{st.lrn}</td>
-                  <td className="font-bold">
-                    {st.family_name}, {st.first_name} {st.middle_name}
-                  </td>
-                  <td>{st.gender}</td>
-                  <td>
-                    <select
-                      value={st.reading_level || "Non-Reader"}
-                      onChange={(e) =>
-                        handleReadingCategoryChange(st.id, e.target.value)
-                      }
-                      className="table-select"
-                    >
-                      <option value="Non-Reader">Non-Reader</option>
-                      <option value="Frustration">Frustration</option>
-                      <option value="Instructional">Instructional</option>
-                      <option value="Independent">Independent</option>
-                    </select>
-                  </td>
-                  {isGradeChairman && (
-                    <td>
-                      <select
-                        value={st.adviser_id || ""}
-                        onChange={(e) => handleTransfer(st.id, e.target.value)}
-                        className="table-select highlight"
-                      >
-                        {otherAdvisers.map((adv) => (
-                          <option key={adv.id} value={adv.id}>
-                            {adv.first_name} {adv.family_name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  )}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ── SEARCH TAB ──────────────────────────────────────────────────────────────
-function SearchTab() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [results, setResults] = useState([]);
-  const [searched, setSearched] = useState(false);
-
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!searchTerm.trim()) return;
-
-    const { data } = await supabase
-      .from("students")
-      .select("*, profiles(first_name, family_name, section_assigned)")
-      .or(`family_name.ilike.%${searchTerm}%,lrn.ilike.%${searchTerm}%`);
-
-    if (data) setResults(data);
-    setSearched(true);
-  };
-
-  return (
-    <div className="dash-card">
-      <div className="dash-card-header">
-        <h2>Search Learner Placement</h2>
         <p>
-          Locate learner information and assigned adviser by Family Name or LRN.
+          Total: {students.length} Learners &nbsp;|&nbsp; Male: {maleCount}{" "}
+          &nbsp;|&nbsp; Female: {femaleCount}
         </p>
       </div>
 
-      <form onSubmit={handleSearch} className="search-box">
-        <input
-          type="text"
-          placeholder="Search by Family Name or 12-digit LRN..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          required
-        />
-        <button type="submit" className="lf-btn search-btn">
-          Search
-        </button>
-      </form>
+      {/* Reading Level Summary */}
+      <div
+        style={{
+          display: "flex",
+          gap: "12px",
+          flexWrap: "wrap",
+          marginBottom: "16px",
+        }}
+      >
+        {Object.entries(readingBreakdown).map(([level, count]) => (
+          <div
+            key={level}
+            style={{
+              background: "#f5f0f0",
+              border: "1px solid #e0d0d0",
+              borderRadius: "8px",
+              padding: "8px 16px",
+              textAlign: "center",
+              minWidth: "100px",
+            }}
+          >
+            <div
+              style={{ fontSize: "1.4rem", fontWeight: "700", color: "#7b1a1a" }}
+            >
+              {count}
+            </div>
+            <div style={{ fontSize: "0.72rem", color: "#666" }}>{level}</div>
+          </div>
+        ))}
+      </div>
 
-      {searched && (
-        <div className="search-results">
-          {results.length === 0 ? (
-            <p className="no-results">
-              No learner records matching your search.
-            </p>
-          ) : (
-            results.map((st) => (
-              <div key={st.id} className="search-item-card">
-                <div className="search-item-main">
-                  <h3>
-                    {st.family_name}, {st.first_name} {st.middle_name}
-                  </h3>
-                  <p className="lrn-badge">LRN: {st.lrn}</p>
-                  <p>
-                    Grade:{" "}
-                    <strong>
-                      {st.grade_level === 0 ? "Kinder" : st.grade_level}
-                    </strong>{" "}
-                    | Gender: <strong>{st.gender}</strong> | Age:{" "}
-                    <strong>{st.age}</strong>
-                  </p>
-                  <p className="sub-detail">
-                    Address: {st.address} | Contact: {st.contact_number}
-                  </p>
-                  <p className="sub-detail">
-                    Parents:{" "}
-                    {st.father_name ||
-                      st.mother_name ||
-                      st.guardian_name ||
-                      "N/A"}
-                  </p>
-                </div>
+      {message && (
+        <div
+          style={{
+            background: "#e8f5e9",
+            border: "1px solid #a5d6a7",
+            color: "#2e7d32",
+            padding: "8px 14px",
+            borderRadius: "6px",
+            marginBottom: "12px",
+            fontSize: "0.85rem",
+          }}
+        >
+          {message}
+        </div>
+      )}
 
-                <div className="search-item-adviser">
-                  <span className="adv-label">Assigned Adviser</span>
-                  <span className="adv-name">
-                    {st.profiles
-                      ? `${st.profiles.first_name} ${st.profiles.family_name}`
-                      : "Unassigned"}
-                  </span>
-                  <span className="adv-section">
-                    {st.profiles?.section_assigned
-                      ? `Section: ${st.profiles.section_assigned}`
-                      : ""}
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "40px", color: "#888" }}>
+          Loading learners…
+        </div>
+      ) : (
+        <div className="dash-table-wrapper">
+          <table className="dash-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>LRN</th>
+                <th>Learner Name</th>
+                <th>Gender</th>
+                {isGradeChairman && <th>Grade</th>}
+                <th>Reading Level</th>
+              </tr>
+            </thead>
+            <tbody>
+              {students.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={isGradeChairman ? 6 : 5}
+                    style={{ textAlign: "center", padding: "24px", color: "#999" }}
+                  >
+                    No learners assigned to your advisory class yet.
+                  </td>
+                </tr>
+              ) : (
+                students.map((st, idx) => (
+                  <tr key={st.id}>
+                    <td style={{ color: "#aaa", fontSize: "0.8rem" }}>
+                      {idx + 1}
+                    </td>
+                    <td className="font-mono">{st.lrn}</td>
+                    <td className="font-bold">
+                      {st.family_name}, {st.first_name}{" "}
+                      {st.middle_name ? st.middle_name.charAt(0) + "." : ""}
+                    </td>
+                    <td>{st.gender}</td>
+                    {isGradeChairman && (
+                      <td>
+                        {st.grade_level === 0 ? "Kinder" : `Grade ${st.grade_level}`}
+                      </td>
+                    )}
+                    <td>
+                      <select
+                        value={st.reading_level || "Non-Reader"}
+                        onChange={(e) =>
+                          handleReadingLevelChange(st.id, e.target.value)
+                        }
+                        disabled={saving === st.id}
+                        className="table-select"
+                      >
+                        <option value="Non-Reader">Non-Reader</option>
+                        <option value="Frustration">Frustration</option>
+                        <option value="Instructional">Instructional</option>
+                        <option value="Independent">Independent</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

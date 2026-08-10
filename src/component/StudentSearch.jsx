@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { supabase } from "./App";
+import { supabase } from "../lib/supabase";
 import { Search } from "lucide-react";
 
 export function StudentSearchTab() {

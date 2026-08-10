@@ -1,9 +1,25 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Expose secure, limited APIs to the React renderer window
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Example API methods
-  appVersion: process.env.npm_package_version,
-  send: (channel, data) => ipcRenderer.send(channel, data),
-  on: (channel, func) => ipcRenderer.on(channel, (event, ...args) => func(...args)),
+  // App info
+  getVersion: () => ipcRenderer.invoke('app:getVersion'),
+
+  // Auto-updater actions
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  downloadUpdate:  () => ipcRenderer.invoke('updater:download'),
+  installUpdate:   () => ipcRenderer.invoke('updater:install'),
+
+  // Updater push events (main → renderer)
+  onUpdaterStatus:   (cb) => ipcRenderer.on('updater:status',   (_e, d) => cb(d)),
+  onUpdaterProgress: (cb) => ipcRenderer.on('updater:progress', (_e, d) => cb(d)),
+
+  // Native menu "Check for Updates" click → open modal in renderer
+  onMenuCheckForUpdates: (cb) => ipcRenderer.on('menu:checkForUpdates', () => cb()),
+
+  // Cleanup
+  removeUpdaterListeners: () => {
+    ipcRenderer.removeAllListeners('updater:status');
+    ipcRenderer.removeAllListeners('updater:progress');
+    ipcRenderer.removeAllListeners('menu:checkForUpdates');
+  },
 });

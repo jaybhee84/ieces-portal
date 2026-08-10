@@ -7,91 +7,10 @@ import { EnrollmentDataTab } from "./EnrollmentDataTab";
 import { AdvisoryClass } from "./AdvisoryClass";
 import { TransferLearner } from "./TransferLearner";
 
-// ── Sidebar update modal ──────────────────────────────────────────────────────
-function SidebarUpdateModal({ onClose }) {
-  const [status, setStatus] = useState("checking");
-  const [updateInfo, setUpdateInfo] = useState(null);
-  const [progress, setProgress] = useState(0);
-  const [errorMsg, setErrorMsg] = useState("");
-
-  useEffect(() => {
-    if (!window.electronAPI) { setStatus("error"); setErrorMsg("Not running in Electron."); return; }
-
-    window.electronAPI.onUpdaterStatus((data) => {
-      if (data.status === "checking")        { setStatus("checking"); }
-      else if (data.status === "available")  { setStatus("available"); setUpdateInfo(data); }
-      else if (data.status === "up-to-date") { setStatus("up-to-date"); }
-      else if (data.status === "downloaded") { setStatus("downloaded"); setUpdateInfo(data); }
-      else if (data.status === "error")      { setStatus("error"); setErrorMsg(data.message || "Unknown error."); }
-    });
-    window.electronAPI.onUpdaterProgress((data) => {
-      setStatus("downloading");
-      setProgress(data.percent);
-    });
-    window.electronAPI.checkForUpdates().catch(() => {
-      setStatus("error"); setErrorMsg("Could not reach update server.");
-    });
-    return () => window.electronAPI.removeUpdaterListeners?.();
-  }, []);
-
-  const body = () => {
-    switch (status) {
-      case "checking":
-        return <><div className="upd-spinner" /><p className="upd-msg">Checking for updates…</p></>;
-      case "up-to-date":
-        return <><div className="upd-icon upd-ok">✓</div><p className="upd-msg" style={{color:"#2e7d32"}}>You're on the latest version.</p></>;
-      case "available":
-        return <>
-          <div className="upd-icon upd-new">↑</div>
-          <p className="upd-msg"><strong>v{updateInfo?.version}</strong> is available!</p>
-          {updateInfo?.releaseDate && <p className="upd-sub">Released: {new Date(updateInfo.releaseDate).toLocaleDateString()}</p>}
-          <button className="lf-btn upd-btn" onClick={() => { setStatus("downloading"); setProgress(0); window.electronAPI.downloadUpdate(); }}>Download Update</button>
-        </>;
-      case "downloading":
-        return <>
-          <div className="upd-progress-wrap"><div className="upd-progress-bar" style={{width:`${progress}%`}} /></div>
-          <p className="upd-msg">Downloading… {progress}%</p>
-        </>;
-      case "downloaded":
-        return <>
-          <div className="upd-icon upd-ok">✓</div>
-          <p className="upd-msg" style={{color:"#2e7d32"}}>v{updateInfo?.version} ready! Restart to install.</p>
-          <button className="lf-btn upd-btn" onClick={() => window.electronAPI.installUpdate()}>Restart &amp; Install</button>
-        </>;
-      case "error":
-        return <><div className="upd-icon upd-err">✕</div><p className="upd-msg" style={{color:"#b71c1c"}}>Update check failed.</p><p className="upd-sub">{errorMsg}</p></>;
-      default: return null;
-    }
-  };
-
-  return (
-    <div className="upd-overlay" onClick={onClose}>
-      <div className="upd-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="upd-modal-header">
-          <h3>Check for Updates</h3>
-          <button className="upd-close" onClick={onClose}>✕</button>
-        </div>
-        <div className="upd-modal-body">{body()}</div>
-      </div>
-    </div>
-  );
-}
-
 export default function DashboardPage({ session, userSession, onLogout }) {
   const [activeTab, setActiveTab] = useState("enrollment");
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [appVersion, setAppVersion] = useState("");
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-
-  useEffect(() => {
-    if (window.electronAPI?.getVersion) {
-      window.electronAPI.getVersion().then(setAppVersion).catch(() => {});
-    }
-    if (window.electronAPI?.onMenuCheckForUpdates) {
-      window.electronAPI.onMenuCheckForUpdates(() => setShowUpdateModal(true));
-    }
-  }, []);
 
   const activeSession = session || userSession;
 
@@ -144,15 +63,9 @@ export default function DashboardPage({ session, userSession, onLogout }) {
     );
   }
 
-  // ── Admin test override ──────────────────────────────────────────────────────
-  // Logging in as username "admin" unlocks all role-gated features for testing.
-  const isAdminTest = profile?.username === "admin";
-
   const isAdviser =
-    isAdminTest ||
-    profile?.role === "adviser" ||
-    profile?.role === "grade_chairman";
-  const isGradeChairman = isAdminTest || profile?.role === "grade_chairman";
+    profile?.role === "adviser" || profile?.role === "grade_chairman";
+  const isGradeChairman = profile?.role === "grade_chairman";
 
   return (
     <div className="dash-root">
@@ -173,11 +86,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               {profile?.family_name || ""}
             </span>
             <span className="user-role">
-              {isAdminTest
-                ? "⚙ ADMIN TEST — All Features"
-                : profile?.role
-                  ? profile.role.replace("_", " ")
-                  : "Teacher"}
+              {profile?.role ? profile.role.replace("_", " ") : "Teacher"}
             </span>
           </div>
           <button onClick={handleSignOutClick} className="dash-logout-btn">
@@ -239,25 +148,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               <span className="nav-icon">🔍</span> Search Learner
             </button>
           </div>
-
-          {/* Sidebar footer — Check for Updates + version */}
-          <div className="sidebar-footer">
-            <button
-              className="sidebar-update-btn"
-              onClick={() => setShowUpdateModal(true)}
-            >
-              <span className="sidebar-update-icon">↑</span> Check for Updates
-            </button>
-            {appVersion && (
-              <span className="sidebar-version">v{appVersion}</span>
-            )}
-          </div>
         </nav>
-
-        {/* Update modal */}
-        {showUpdateModal && (
-          <SidebarUpdateModal onClose={() => setShowUpdateModal(false)} />
-        )}
 
         {/* Content Panel Area */}
         <main className="dash-content">

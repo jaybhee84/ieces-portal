@@ -450,3 +450,4 @@ function ClassPanel({
     </div>
   );
 }
+
