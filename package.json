@@ -1,7 +1,7 @@
 {
   "name": "ieces-portal",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "commonjs",
   "main": "electron/main.js",
   "scripts": {
@@ -26,8 +26,7 @@
       {
         "provider": "github",
         "owner": "jaybhee84",
-        "repo": "ieces-portal",
-        "releaseType": "release"
+        "repo": "ieces-portal"
       }
     ],
     "win": {
