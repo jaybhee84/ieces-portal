@@ -4,6 +4,17 @@ const { autoUpdater } = require('electron-updater');
 
 let mainWindow;
 
+// ── Icon Path Resolution ──────────────────────────────────────────────────────
+const getAppIcon = () => {
+  if (process.platform === 'win32') {
+    return path.join(__dirname, '../public/prieces.ico');
+  }
+  if (process.platform === 'darwin') {
+    return path.join(__dirname, '../public/prieces.icns');
+  }
+  return path.join(__dirname, '../public/prieces.png');
+};
+
 // ── Auto-updater ──────────────────────────────────────────────────────────────
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
@@ -143,7 +154,6 @@ function buildMenu() {
     },
   ];
 
-  // This REPLACES the default menu entirely — no merging
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -180,6 +190,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: 'Isabela East Central ES - Portal',
+    icon: getAppIcon(), // Sets application icon for window header and taskbar
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
