@@ -103,6 +103,7 @@ function buildMenu() {
       submenu: [
         { role: 'reload' },
         { role: 'forceReload' },
+        { role: 'toggleDevTools' }, // Enables Ctrl+Shift+I / F12 DevTools shortcut
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },
@@ -190,7 +191,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: 'Isabela East Central ES - Portal',
-    icon: getAppIcon(), // Sets application icon for window header and taskbar
+    icon: getAppIcon(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -198,12 +199,12 @@ function createWindow() {
     },
   });
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
-
-  if (process.env.NODE_ENV === 'development') {
+  if (!app.isPackaged && process.env.NODE_ENV === 'development') {
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
     mainWindow.loadURL(devServerUrl);
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    // Resolves correctly inside the packaged ASAR archive for production build
+    mainWindow.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'));
   }
 
   mainWindow.on('closed', () => { mainWindow = null; });
@@ -215,7 +216,7 @@ app.whenReady().then(() => {
   setupAutoUpdater();
 
   // Silent background check 3s after launch (production only)
-  if (process.env.NODE_ENV !== 'development') {
+  if (app.isPackaged) {
     setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 3000);
   }
 });
