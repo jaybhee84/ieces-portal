@@ -18,6 +18,7 @@ jobs:
           fetch-depth: 0
 
       - name: Create Git Tag from Commit Message
+        id: version
         shell: bash
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%B)
@@ -25,33 +26,38 @@ jobs:
           TAG=$(echo "$COMMIT_MSG" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
           if [ -n "$TAG" ]; then
             echo "Found version tag: $TAG"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git tag "$TAG" || true
             git push origin "$TAG" || true
           else
             echo "No version tag matching vX.X.X found in commit message."
+            echo "tag=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Node.js
+        if: steps.version.outputs.tag != ''
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: "npm"
 
       - name: Install dependencies
+        if: steps.version.outputs.tag != ''
         run: npm ci
 
       - name: Build and Publish Electron App
+        if: steps.version.outputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run electron:build:publish
 
       - name: Publish GitHub Release
+        if: steps.version.outputs.tag != ''
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          gh release edit "v$VERSION" --draft=false --latest
+          gh release edit "${{ steps.version.outputs.tag }}" --draft=false --latest
