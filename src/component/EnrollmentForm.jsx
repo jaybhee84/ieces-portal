@@ -84,6 +84,7 @@ const RELIGIONS_WESTERN_MINDANAO = [
 
 export function EnrollmentForm() {
   const [advisers, setAdvisers] = useState([]);
+  const [adviserLoadError, setAdviserLoadError] = useState("");
 
   // Parent details & status flags
   const [father, setFather] = useState({
@@ -213,19 +214,49 @@ export function EnrollmentForm() {
     async function fetchAdvisers() {
       if (!formData.grade_level) {
         setAdvisers([]);
+        setAdviserLoadError("");
         setFormData((prev) => ({ ...prev, adviser_id: "" }));
         return;
       }
 
       const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, section_assigned")
-        .eq("grade_level_assigned", parseInt(formData.grade_level));
+        .from("org_chart")
+        .select(
+          "id, first_name, middle_name, family_name, grade_level, teaching_type, is_grade_chairman",
+        )
+        .eq("category", "teaching");
 
       if (!error && data) {
-        setAdvisers(data);
+        const selectedGrade =
+          formData.grade_level === "0"
+            ? "KINDER"
+            : `GRADE ${formData.grade_level}`;
+
+        const matchingAdvisers = data
+          .filter((teacher) => {
+            const teachingType = String(teacher.teaching_type || "").toUpperCase();
+            const gradeLevel = String(teacher.grade_level || "").toUpperCase();
+            return teachingType === "ADVISER" && gradeLevel === selectedGrade;
+          })
+          .map((teacher) => ({
+            ...teacher,
+            full_name: [
+              teacher.first_name,
+              teacher.middle_name,
+              teacher.family_name,
+            ]
+              .filter(Boolean)
+              .join(" "),
+          }))
+          .sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+        setAdvisers(matchingAdvisers);
+        setAdviserLoadError("");
       } else {
         setAdvisers([]);
+        setAdviserLoadError(
+          `Unable to load advisers from the organizational chart: ${error?.message || "Unknown error"}`,
+        );
       }
       setFormData((prev) => ({ ...prev, adviser_id: "" }));
     }
@@ -412,11 +443,16 @@ export function EnrollmentForm() {
                   <option value="">-- Select Adviser --</option>
                   {advisers.map((adv) => (
                     <option key={adv.id} value={adv.id}>
-                      {adv.full_name}{" "}
-                      {adv.section_assigned ? `(${adv.section_assigned})` : ""}
+                      {adv.full_name}
+                      {adv.is_grade_chairman ? " (Grade Chairman)" : ""}
                     </option>
                   ))}
                 </select>
+                {adviserLoadError && (
+                  <p className="mt-1 text-xs text-red-600">
+                    {adviserLoadError}
+                  </p>
+                )}
               </div>
 
               <div>
