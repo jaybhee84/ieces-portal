@@ -13,7 +13,7 @@ function UpdateModal({ onClose }) {
   useEffect(() => {
     if (!window.electronAPI) return;
 
-    window.electronAPI.onUpdaterStatus((data) => {
+    const removeStatusListener = window.electronAPI.onUpdaterStatus((data) => {
       if (data.status === "checking") {
         setStatus("checking");
       } else if (data.status === "available") {
@@ -30,7 +30,7 @@ function UpdateModal({ onClose }) {
       }
     });
 
-    window.electronAPI.onUpdaterProgress((data) => {
+    const removeProgressListener = window.electronAPI.onUpdaterProgress((data) => {
       setStatus("downloading");
       setProgress(data.percent);
     });
@@ -42,7 +42,8 @@ function UpdateModal({ onClose }) {
     });
 
     return () => {
-      window.electronAPI.removeUpdaterListeners?.();
+      removeStatusListener?.();
+      removeProgressListener?.();
     };
   }, []);
 
@@ -154,9 +155,10 @@ export default function LoginPage({ onLoginSuccess }) {
 
     // Listen for native Help → Check for Updates menu click
     if (window.electronAPI?.onMenuCheckForUpdates) {
-      window.electronAPI.onMenuCheckForUpdates(() => {
+      const removeMenuListener = window.electronAPI.onMenuCheckForUpdates(() => {
         setShowUpdateModal(true);
       });
+      return removeMenuListener;
     }
   }, []);
 

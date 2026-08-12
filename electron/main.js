@@ -7,12 +7,12 @@ let mainWindow;
 // ── Icon Path Resolution ──────────────────────────────────────────────────────
 const getAppIcon = () => {
   if (process.platform === 'win32') {
-    return path.join(__dirname, '../public/prieces.ico');
+    return path.join(__dirname, '../public/iecesportal.ico');
   }
   if (process.platform === 'darwin') {
-    return path.join(__dirname, '../public/prieces.icns');
+    return path.join(__dirname, '../public/iecesportal.icns');
   }
-  return path.join(__dirname, '../public/prieces.png');
+  return path.join(__dirname, '../public/iecesportal.png');
 };
 
 // ── Auto-updater ──────────────────────────────────────────────────────────────

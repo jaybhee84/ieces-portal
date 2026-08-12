@@ -17,21 +17,24 @@ function SidebarUpdateModal({ onClose }) {
   useEffect(() => {
     if (!window.electronAPI) { setStatus("error"); setErrorMsg("Not running in Electron."); return; }
 
-    window.electronAPI.onUpdaterStatus((data) => {
+    const removeStatusListener = window.electronAPI.onUpdaterStatus((data) => {
       if (data.status === "checking")        { setStatus("checking"); }
       else if (data.status === "available")  { setStatus("available"); setUpdateInfo(data); }
       else if (data.status === "up-to-date") { setStatus("up-to-date"); }
       else if (data.status === "downloaded") { setStatus("downloaded"); setUpdateInfo(data); }
       else if (data.status === "error")      { setStatus("error"); setErrorMsg(data.message || "Unknown error."); }
     });
-    window.electronAPI.onUpdaterProgress((data) => {
+    const removeProgressListener = window.electronAPI.onUpdaterProgress((data) => {
       setStatus("downloading");
       setProgress(data.percent);
     });
     window.electronAPI.checkForUpdates().catch(() => {
       setStatus("error"); setErrorMsg("Could not reach update server.");
     });
-    return () => window.electronAPI.removeUpdaterListeners?.();
+    return () => {
+      removeStatusListener?.();
+      removeProgressListener?.();
+    };
   }, []);
 
   const body = () => {
@@ -89,7 +92,8 @@ export default function DashboardPage({ session, userSession, onLogout }) {
       window.electronAPI.getVersion().then(setAppVersion).catch(() => {});
     }
     if (window.electronAPI?.onMenuCheckForUpdates) {
-      window.electronAPI.onMenuCheckForUpdates(() => setShowUpdateModal(true));
+      const removeMenuListener = window.electronAPI.onMenuCheckForUpdates(() => setShowUpdateModal(true));
+      return removeMenuListener;
     }
   }, []);
 

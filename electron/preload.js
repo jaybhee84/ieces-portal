@@ -10,16 +10,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installUpdate:   () => ipcRenderer.invoke('updater:install'),
 
   // Updater push events (main → renderer)
-  onUpdaterStatus:   (cb) => ipcRenderer.on('updater:status',   (_e, d) => cb(d)),
-  onUpdaterProgress: (cb) => ipcRenderer.on('updater:progress', (_e, d) => cb(d)),
+  onUpdaterStatus: (cb) => {
+    const listener = (_event, data) => cb(data);
+    ipcRenderer.on('updater:status', listener);
+    return () => ipcRenderer.removeListener('updater:status', listener);
+  },
+  onUpdaterProgress: (cb) => {
+    const listener = (_event, data) => cb(data);
+    ipcRenderer.on('updater:progress', listener);
+    return () => ipcRenderer.removeListener('updater:progress', listener);
+  },
 
   // Native menu "Check for Updates" click → open modal in renderer
-  onMenuCheckForUpdates: (cb) => ipcRenderer.on('menu:checkForUpdates', () => cb()),
-
-  // Cleanup
-  removeUpdaterListeners: () => {
-    ipcRenderer.removeAllListeners('updater:status');
-    ipcRenderer.removeAllListeners('updater:progress');
-    ipcRenderer.removeAllListeners('menu:checkForUpdates');
+  onMenuCheckForUpdates: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on('menu:checkForUpdates', listener);
+    return () => ipcRenderer.removeListener('menu:checkForUpdates', listener);
   },
 });

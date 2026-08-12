@@ -1,7 +1,7 @@
 {
   "name": "ieces-portal",
   "private": true,
-  "version": "1.0.9",
+  "version": "1.0.10",
   "type": "commonjs",
   "main": "electron/main.js",
   "scripts": {
@@ -31,13 +31,13 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/prieces.ico"
+      "icon": "public/iecesportal.ico"
     },
     "mac": {
-      "icon": "public/prieces.icns"
+      "icon": "public/iecesportal.icns"
     },
     "linux": {
-      "icon": "public/prieces.png"
+      "icon": "public/iecesportal.png"
     },
     "nsis": {
       "oneClick": false,
@@ -45,8 +45,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "IECES Portal",
-      "installerIcon": "public/prieces.ico",
-      "uninstallerIcon": "public/prieces.ico"
+      "installerIcon": "public/iecesportal.ico",
+      "uninstallerIcon": "public/iecesportal.ico"
     }
   },
   "dependencies": {
