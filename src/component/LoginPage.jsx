@@ -315,6 +315,8 @@ function RegisterForm({ onGoLogin }) {
   const [loading, setLoading] = useState(false);
 
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  const setUppercase = (field) => (e) =>
+    setForm((f) => ({ ...f, [field]: e.target.value.toUpperCase() }));
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -347,9 +349,9 @@ function RegisterForm({ onGoLogin }) {
         data: {
           app_source: "ieces_portal",
           username: form.username.trim(),
-          family_name: form.familyName.trim(),
-          first_name: form.firstName.trim(),
-          middle_initial: form.middleInitial.trim() || null,
+          family_name: form.familyName.trim().toUpperCase(),
+          first_name: form.firstName.trim().toUpperCase(),
+          middle_initial: form.middleInitial.trim().toUpperCase() || null,
         },
       },
     });
@@ -385,16 +387,16 @@ function RegisterForm({ onGoLogin }) {
         <div className="lf-row">
           <div className="lf-group">
             <label>Family Name *</label>
-            <input type="text" value={form.familyName} onChange={set("familyName")} placeholder="Dela Cruz" required />
+            <input type="text" value={form.familyName} onChange={setUppercase("familyName")} placeholder="DELA CRUZ" required />
           </div>
           <div className="lf-group">
             <label>First Name *</label>
-            <input type="text" value={form.firstName} onChange={set("firstName")} placeholder="Juan" required />
+            <input type="text" value={form.firstName} onChange={setUppercase("firstName")} placeholder="JUAN" required />
           </div>
         </div>
         <div className="lf-group">
           <label>Middle Initial</label>
-          <input type="text" value={form.middleInitial} onChange={set("middleInitial")} placeholder="B." maxLength={3} />
+          <input type="text" value={form.middleInitial} onChange={setUppercase("middleInitial")} placeholder="B." maxLength={3} />
         </div>
         <div className="lf-group">
           <label>Username *</label>

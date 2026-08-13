@@ -39,9 +39,9 @@ begin
       new.id,
       lower(new.email),
       trim(new.raw_user_meta_data ->> 'username'),
-      trim(new.raw_user_meta_data ->> 'family_name'),
-      trim(new.raw_user_meta_data ->> 'first_name'),
-      nullif(trim(new.raw_user_meta_data ->> 'middle_initial'), '')
+      upper(trim(new.raw_user_meta_data ->> 'family_name')),
+      upper(trim(new.raw_user_meta_data ->> 'first_name')),
+      nullif(upper(trim(new.raw_user_meta_data ->> 'middle_initial')), '')
     );
   end if;
   return new;
