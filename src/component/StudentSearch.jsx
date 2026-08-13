@@ -14,7 +14,7 @@ export function StudentSearchTab() {
     setSearching(true);
     const { data, error } = await supabase
       .from("students")
-      .select("*, profiles(full_name, section_assigned)")
+      .select("*, portal_profile(full_name, section_assigned)")
       .or(`family_name.ilike.%${searchTerm}%,lrn.ilike.%${searchTerm}%`);
 
     if (!error && data) setResults(data);
@@ -89,11 +89,11 @@ export function StudentSearchTab() {
                   Assigned Adviser
                 </p>
                 <p className="text-sm font-bold text-blue-900">
-                  {st.profiles?.full_name || "Unassigned"}
+                  {st.portal_profile?.full_name || "Unassigned"}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {st.profiles?.section_assigned
-                    ? `Section: ${st.profiles.section_assigned}`
+                  {st.portal_profile?.section_assigned
+                    ? `Section: ${st.portal_profile.section_assigned}`
                     : ""}
                 </p>
               </div>

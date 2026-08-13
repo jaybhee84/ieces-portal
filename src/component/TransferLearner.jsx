@@ -23,7 +23,7 @@ export function TransferLearner({ profile }) {
 
     const fetchAdvisers = async () => {
       const { data, error } = await supabase
-        .from("profiles")
+        .from("portal_profile")
         .select("id, first_name, family_name, section_assigned")
         .eq("grade_level_assigned", gradeLevel);
 

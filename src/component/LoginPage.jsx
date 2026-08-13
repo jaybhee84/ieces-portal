@@ -224,7 +224,7 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
 
     try {
       const { data: profile, error: profileErr } = await supabase
-        .from("profiles")
+        .from("portal_profile")
         .select("email")
         .eq("username", username.trim())
         .single();
@@ -335,28 +335,25 @@ function RegisterForm({ onGoLogin }) {
     }
 
     const { data: existingUser } = await supabase
-      .from("profiles").select("username")
+      .from("portal_profile").select("username")
       .eq("username", form.username.trim()).single();
 
     if (existingUser) { setError("Username is already taken."); setLoading(false); return; }
 
-    const { data: authData, error: authErr } = await supabase.auth.signUp({
+    const { error: authErr } = await supabase.auth.signUp({
       email: form.email.trim().toLowerCase(),
       password: form.password,
+      options: {
+        data: {
+          username: form.username.trim(),
+          family_name: form.familyName.trim(),
+          first_name: form.firstName.trim(),
+          middle_initial: form.middleInitial.trim() || null,
+        },
+      },
     });
 
     if (authErr) { setError(authErr.message); setLoading(false); return; }
-
-    const { error: profileErr } = await supabase.from("profiles").insert({
-      id: authData.user.id,
-      email: form.email.trim().toLowerCase(),
-      username: form.username.trim(),
-      family_name: form.familyName.trim(),
-      first_name: form.firstName.trim(),
-      middle_initial: form.middleInitial.trim() || null,
-    });
-
-    if (profileErr) { setError("Profile creation failed: " + profileErr.message); setLoading(false); return; }
 
     setSuccess(true);
     setLoading(false);

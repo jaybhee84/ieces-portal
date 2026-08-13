@@ -112,7 +112,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
       }
 
       const { data, error } = await supabase
-        .from("profiles")
+        .from("portal_profile")
         .select("*")
         .eq("id", currentUserId)
         .single();
@@ -324,7 +324,7 @@ function AdvisoryListTab({ profile, isGradeChairman }) {
 
   const fetchGradeAdvisers = async () => {
     const { data } = await supabase
-      .from("profiles")
+      .from("portal_profile")
       .select("id, first_name, family_name, section_assigned")
       .eq("grade_level_assigned", profile?.grade_level_assigned);
     if (data) setOtherAdvisers(data);
@@ -437,7 +437,7 @@ function SearchTab() {
 
     const { data } = await supabase
       .from("students")
-      .select("*, profiles(first_name, family_name, section_assigned)")
+      .select("*, portal_profile(first_name, family_name, section_assigned)")
       .or(`family_name.ilike.%${searchTerm}%,lrn.ilike.%${searchTerm}%`);
 
     if (data) setResults(data);
@@ -503,13 +503,13 @@ function SearchTab() {
                 <div className="search-item-adviser">
                   <span className="adv-label">Assigned Adviser</span>
                   <span className="adv-name">
-                    {st.profiles
-                      ? `${st.profiles.first_name} ${st.profiles.family_name}`
+                    {st.portal_profile
+                      ? `${st.portal_profile.first_name} ${st.portal_profile.family_name}`
                       : "Unassigned"}
                   </span>
                   <span className="adv-section">
-                    {st.profiles?.section_assigned
-                      ? `Section: ${st.profiles.section_assigned}`
+                    {st.portal_profile?.section_assigned
+                      ? `Section: ${st.portal_profile.section_assigned}`
                       : ""}
                   </span>
                 </div>
