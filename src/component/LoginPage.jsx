@@ -345,6 +345,7 @@ function RegisterForm({ onGoLogin }) {
       password: form.password,
       options: {
         data: {
+          app_source: "ieces_portal",
           username: form.username.trim(),
           family_name: form.familyName.trim(),
           first_name: form.firstName.trim(),

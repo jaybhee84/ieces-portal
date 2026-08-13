@@ -1,16 +1,7 @@
--- IECES Portal profile migration
--- WARNING: This intentionally deletes every existing Supabase Auth account.
+-- IECES Portal profile setup
+-- Non-destructive: does not delete or alter public.profiles or existing accounts.
 
 begin;
-
--- Learners must be detached before their old adviser accounts are deleted.
-update public.students
-set adviser_id = null
-where adviser_id is not null;
-
--- Delete all existing accounts. Existing public.profiles rows should be removed
--- automatically if their id has an ON DELETE CASCADE reference to auth.users.
-delete from auth.users;
 
 create table if not exists public.portal_profile (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -32,40 +23,6 @@ create table if not exists public.portal_profile (
   constraint portal_profile_username_key unique (username)
 );
 
--- Replace any old students.adviser_id foreign key with the portal table link.
-do $$
-declare
-  constraint_name text;
-begin
-  for constraint_name in
-    select c.conname
-    from pg_constraint c
-    join pg_class t on t.oid = c.conrelid
-    join pg_namespace n on n.oid = t.relnamespace
-    where c.contype = 'f'
-      and n.nspname = 'public'
-      and t.relname = 'students'
-      and exists (
-        select 1
-        from unnest(c.conkey) as key(attnum)
-        join pg_attribute a
-          on a.attrelid = t.oid and a.attnum = key.attnum
-        where a.attname = 'adviser_id'
-      )
-  loop
-    execute format(
-      'alter table public.students drop constraint %I',
-      constraint_name
-    );
-  end loop;
-end $$;
-
-alter table public.students
-  add constraint students_adviser_id_fkey
-  foreign key (adviser_id)
-  references public.portal_profile(id)
-  on delete set null;
-
 -- Auth signup creates the matching portal profile using metadata sent by the app.
 create or replace function public.handle_new_portal_user()
 returns trigger
@@ -74,16 +31,19 @@ security definer
 set search_path = ''
 as $$
 begin
-  insert into public.portal_profile (
-    id, email, username, family_name, first_name, middle_initial
-  ) values (
-    new.id,
-    lower(new.email),
-    trim(new.raw_user_meta_data ->> 'username'),
-    trim(new.raw_user_meta_data ->> 'family_name'),
-    trim(new.raw_user_meta_data ->> 'first_name'),
-    nullif(trim(new.raw_user_meta_data ->> 'middle_initial'), '')
-  );
+  -- Ignore Auth accounts created by other apps sharing this Supabase project.
+  if new.raw_user_meta_data ->> 'app_source' = 'ieces_portal' then
+    insert into public.portal_profile (
+      id, email, username, family_name, first_name, middle_initial
+    ) values (
+      new.id,
+      lower(new.email),
+      trim(new.raw_user_meta_data ->> 'username'),
+      trim(new.raw_user_meta_data ->> 'family_name'),
+      trim(new.raw_user_meta_data ->> 'first_name'),
+      nullif(trim(new.raw_user_meta_data ->> 'middle_initial'), '')
+    );
+  end if;
   return new;
 end;
 $$;
@@ -113,6 +73,3 @@ grant select on public.portal_profile to anon, authenticated;
 grant update on public.portal_profile to authenticated;
 
 commit;
-
--- After confirming the app works, the unused old table can be removed separately:
--- drop table public.profiles;
