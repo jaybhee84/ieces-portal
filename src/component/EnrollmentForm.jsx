@@ -68,6 +68,18 @@ const TRIBES_WESTERN_MINDANAO = [
   "Other / Non-IP",
 ];
 
+// Phil-IRI Reading Categories
+const PHILIRI_READING_CATEGORIES = [
+  { value: "NGS", label: "Non-Grade Level / Non-Standard (NGS)" },
+  { value: "FF", label: "Frustration — Filipino (FF)" },
+  { value: "FE", label: "Frustration — English (FE)" },
+  { value: "IF", label: "Instructional — Filipino (IF)" },
+  { value: "IE", label: "Instructional — English (IE)" },
+  { value: "INDF", label: "Independent — Filipino (INDF)" },
+  { value: "INDE", label: "Independent — English (INDE)" },
+  { value: "NA", label: "Not Yet Assessed (NA)" },
+];
+
 // Primary Religions in Western Mindanao
 const RELIGIONS_WESTERN_MINDANAO = [
   "Islam",
@@ -125,6 +137,7 @@ export function EnrollmentForm() {
     tribe: "",
     religion: "",
     is_4ps_beneficiary: false,
+    reading_category: "",
     father_name: "",
     mother_name: "",
     guardian_name: "",
@@ -335,6 +348,7 @@ export function EnrollmentForm() {
         tribe: "",
         religion: "",
         is_4ps_beneficiary: false,
+        reading_category: "",
         father_name: "",
         mother_name: "",
         guardian_name: "",
@@ -633,6 +647,34 @@ export function EnrollmentForm() {
                   />
                   4P's Beneficiary
                 </label>
+              </div>
+            </div>
+
+            {/* Phil-IRI Reading Category */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
+                  Phil-IRI Reading Category
+                </label>
+                <select
+                  value={formData.reading_category}
+                  onChange={(e) =>
+                    setFormData({ ...formData, reading_category: e.target.value })
+                  }
+                  className="w-full p-2.5 border rounded-lg text-sm bg-white"
+                >
+                  <option value="">-- Select Reading Category (optional) --</option>
+                  {PHILIRI_READING_CATEGORIES.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end pb-0.5">
+                <p className="text-xs text-slate-400 leading-snug">
+                  Based on Phil-IRI pre/post assessment. Leave blank if not yet assessed.
+                </p>
               </div>
             </div>
 
