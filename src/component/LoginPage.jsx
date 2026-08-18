@@ -30,10 +30,12 @@ function UpdateModal({ onClose }) {
       }
     });
 
-    const removeProgressListener = window.electronAPI.onUpdaterProgress((data) => {
-      setStatus("downloading");
-      setProgress(data.percent);
-    });
+    const removeProgressListener = window.electronAPI.onUpdaterProgress(
+      (data) => {
+        setStatus("downloading");
+        setProgress(data.percent);
+      },
+    );
 
     // Trigger the check
     window.electronAPI.checkForUpdates().catch(() => {
@@ -84,7 +86,8 @@ function UpdateModal({ onClose }) {
             </p>
             {updateInfo?.releaseDate && (
               <p className="upd-sub">
-                Released: {new Date(updateInfo.releaseDate).toLocaleDateString()}
+                Released:{" "}
+                {new Date(updateInfo.releaseDate).toLocaleDateString()}
               </p>
             )}
             <button className="lf-btn upd-btn" onClick={handleDownload}>
@@ -96,7 +99,10 @@ function UpdateModal({ onClose }) {
         return (
           <>
             <div className="upd-progress-wrap">
-              <div className="upd-progress-bar" style={{ width: `${progress}%` }} />
+              <div
+                className="upd-progress-bar"
+                style={{ width: `${progress}%` }}
+              />
             </div>
             <p className="upd-msg">Downloading… {progress}%</p>
           </>
@@ -133,7 +139,9 @@ function UpdateModal({ onClose }) {
       <div className="upd-modal" onClick={(e) => e.stopPropagation()}>
         <div className="upd-modal-header">
           <h3>Check for Updates</h3>
-          <button className="upd-close" onClick={onClose}>✕</button>
+          <button className="upd-close" onClick={onClose}>
+            ✕
+          </button>
         </div>
         <div className="upd-modal-body">{statusContent()}</div>
       </div>
@@ -150,14 +158,19 @@ export default function LoginPage({ onLoginSuccess }) {
   useEffect(() => {
     // Get version from Electron
     if (window.electronAPI?.getVersion) {
-      window.electronAPI.getVersion().then(setAppVersion).catch(() => {});
+      window.electronAPI
+        .getVersion()
+        .then(setAppVersion)
+        .catch(() => {});
     }
 
     // Listen for native Help → Check for Updates menu click
     if (window.electronAPI?.onMenuCheckForUpdates) {
-      const removeMenuListener = window.electronAPI.onMenuCheckForUpdates(() => {
-        setShowUpdateModal(true);
-      });
+      const removeMenuListener = window.electronAPI.onMenuCheckForUpdates(
+        () => {
+          setShowUpdateModal(true);
+        },
+      );
       return removeMenuListener;
     }
   }, []);
@@ -295,7 +308,11 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
       <div className="lc-footer">
         <p>
           Don't have an account?{" "}
-          <button type="button" onClick={onGoRegister} className="lc-footer-btn">
+          <button
+            type="button"
+            onClick={onGoRegister}
+            className="lc-footer-btn"
+          >
             Register here
           </button>
         </p>
@@ -307,14 +324,20 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
 // ── Register Form ─────────────────────────────────────────────────────────────
 function RegisterForm({ onGoLogin }) {
   const [form, setForm] = useState({
-    familyName: "", firstName: "", middleInitial: "",
-    username: "", email: "", password: "", confirmPassword: "",
+    familyName: "",
+    firstName: "",
+    middleInitial: "",
+    username: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
   });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  const set = (field) => (e) =>
+    setForm((f) => ({ ...f, [field]: e.target.value }));
   const setUppercase = (field) => (e) =>
     setForm((f) => ({ ...f, [field]: e.target.value.toUpperCase() }));
 
@@ -322,25 +345,40 @@ function RegisterForm({ onGoLogin }) {
     e.preventDefault();
     setError("");
 
-    if (form.password !== form.confirmPassword) { setError("Passwords do not match."); return; }
-    if (form.password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (form.password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
 
     setLoading(true);
 
     const { data: allowed, error: allowErr } = await supabase
-      .from("allowed_users").select("email")
-      .eq("email", form.email.trim().toLowerCase()).single();
+      .from("portal_allowed_users")
+      .select("email")
+      .eq("email", form.email.trim().toLowerCase())
+      .single();
 
     if (allowErr || !allowed) {
       setError("Email not authorized to register. Contact your administrator.");
-      setLoading(false); return;
+      setLoading(false);
+      return;
     }
 
     const { data: existingUser } = await supabase
-      .from("portal_profile").select("username")
-      .eq("username", form.username.trim()).single();
+      .from("portal_profile")
+      .select("username")
+      .eq("username", form.username.trim())
+      .single();
 
-    if (existingUser) { setError("Username is already taken."); setLoading(false); return; }
+    if (existingUser) {
+      setError("Username is already taken.");
+      setLoading(false);
+      return;
+    }
 
     const { error: authErr } = await supabase.auth.signUp({
       email: form.email.trim().toLowerCase(),
@@ -356,7 +394,15 @@ function RegisterForm({ onGoLogin }) {
       },
     });
 
-    if (authErr) { setError(authErr.message); setLoading(false); return; }
+    if (authErr) {
+      if (authErr.message?.toLowerCase().includes("already registered")) {
+        setError("This email is already registered. Please sign in instead.");
+      } else {
+        setError(authErr.message);
+      }
+      setLoading(false);
+      return;
+    }
 
     setSuccess(true);
     setLoading(false);
@@ -365,13 +411,19 @@ function RegisterForm({ onGoLogin }) {
   if (success) {
     return (
       <div className="login-card" style={{ textAlign: "center" }}>
-        <h1 style={{ fontSize: "1.2rem", color: "#7b1a1a", marginBottom: "8px" }}>
+        <h1
+          style={{ fontSize: "1.2rem", color: "#7b1a1a", marginBottom: "8px" }}
+        >
           Account Created!
         </h1>
-        <p style={{ fontSize: "0.8rem", color: "#7a6060", marginBottom: "20px" }}>
+        <p
+          style={{ fontSize: "0.8rem", color: "#7a6060", marginBottom: "20px" }}
+        >
           You can now sign in with your account.
         </p>
-        <button type="button" onClick={onGoLogin} className="lf-btn">Go to Sign In</button>
+        <button type="button" onClick={onGoLogin} className="lf-btn">
+          Go to Sign In
+        </button>
       </div>
     );
   }
@@ -387,32 +439,74 @@ function RegisterForm({ onGoLogin }) {
         <div className="lf-row">
           <div className="lf-group">
             <label>Family Name *</label>
-            <input type="text" value={form.familyName} onChange={setUppercase("familyName")} placeholder="DELA CRUZ" required />
+            <input
+              type="text"
+              value={form.familyName}
+              onChange={setUppercase("familyName")}
+              placeholder="DELA CRUZ"
+              required
+            />
           </div>
           <div className="lf-group">
             <label>First Name *</label>
-            <input type="text" value={form.firstName} onChange={setUppercase("firstName")} placeholder="JUAN" required />
+            <input
+              type="text"
+              value={form.firstName}
+              onChange={setUppercase("firstName")}
+              placeholder="JUAN"
+              required
+            />
           </div>
         </div>
         <div className="lf-group">
           <label>Middle Initial</label>
-          <input type="text" value={form.middleInitial} onChange={setUppercase("middleInitial")} placeholder="B." maxLength={3} />
+          <input
+            type="text"
+            value={form.middleInitial}
+            onChange={setUppercase("middleInitial")}
+            placeholder="B."
+            maxLength={3}
+          />
         </div>
         <div className="lf-group">
           <label>Username *</label>
-          <input type="text" value={form.username} onChange={set("username")} placeholder="juan_delacruz" required />
+          <input
+            type="text"
+            value={form.username}
+            onChange={set("username")}
+            placeholder="juan_delacruz"
+            required
+          />
         </div>
         <div className="lf-group">
           <label>Email *</label>
-          <input type="email" value={form.email} onChange={set("email")} placeholder="you@deped.gov.ph" required />
+          <input
+            type="email"
+            value={form.email}
+            onChange={set("email")}
+            placeholder="you@deped.gov.ph"
+            required
+          />
         </div>
         <div className="lf-group">
           <label>Password *</label>
-          <input type="password" value={form.password} onChange={set("password")} placeholder="Min. 6 characters" required />
+          <input
+            type="password"
+            value={form.password}
+            onChange={set("password")}
+            placeholder="Min. 6 characters"
+            required
+          />
         </div>
         <div className="lf-group">
           <label>Confirm Password *</label>
-          <input type="password" value={form.confirmPassword} onChange={set("confirmPassword")} placeholder="Re-enter password" required />
+          <input
+            type="password"
+            value={form.confirmPassword}
+            onChange={set("confirmPassword")}
+            placeholder="Re-enter password"
+            required
+          />
         </div>
 
         {error && <div className="lf-error">{error}</div>}
@@ -425,7 +519,9 @@ function RegisterForm({ onGoLogin }) {
       <div className="lc-footer">
         <p>
           Already have an account?{" "}
-          <button type="button" onClick={onGoLogin} className="lc-footer-btn">Sign in</button>
+          <button type="button" onClick={onGoLogin} className="lc-footer-btn">
+            Sign in
+          </button>
         </p>
       </div>
     </div>
