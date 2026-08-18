@@ -1,7 +1,7 @@
 {
   "name": "ieces-portal",
   "private": true,
-  "version": "2.0.2",
+  "version": "2.0.3",
   "type": "commonjs",
   "main": "electron/main.js",
   "scripts": {
@@ -53,6 +53,7 @@
     "@supabase/supabase-js": "^2.39.0",
     "electron-updater": "^6.8.9",
     "lucide-react": "^0.344.0",
+    "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

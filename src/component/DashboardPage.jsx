@@ -6,6 +6,7 @@ import { EnrollmentForm } from "./EnrollmentForm";
 import { EnrollmentDataTab } from "./EnrollmentDataTab";
 import { AdvisoryClass } from "./AdvisoryClass";
 import { TransferLearner } from "./TransferLearner";
+import { AutoId } from "./AutoId"; // <--- IMPORT AUTO ID
 
 // ── Sidebar update modal ──────────────────────────────────────────────────────
 function SidebarUpdateModal({ onClose }) {
@@ -15,21 +16,37 @@ function SidebarUpdateModal({ onClose }) {
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
-    if (!window.electronAPI) { setStatus("error"); setErrorMsg("Not running in Electron."); return; }
+    if (!window.electronAPI) {
+      setStatus("error");
+      setErrorMsg("Not running in Electron.");
+      return;
+    }
 
     const removeStatusListener = window.electronAPI.onUpdaterStatus((data) => {
-      if (data.status === "checking")        { setStatus("checking"); }
-      else if (data.status === "available")  { setStatus("available"); setUpdateInfo(data); }
-      else if (data.status === "up-to-date") { setStatus("up-to-date"); }
-      else if (data.status === "downloaded") { setStatus("downloaded"); setUpdateInfo(data); }
-      else if (data.status === "error")      { setStatus("error"); setErrorMsg(data.message || "Unknown error."); }
+      if (data.status === "checking") {
+        setStatus("checking");
+      } else if (data.status === "available") {
+        setStatus("available");
+        setUpdateInfo(data);
+      } else if (data.status === "up-to-date") {
+        setStatus("up-to-date");
+      } else if (data.status === "downloaded") {
+        setStatus("downloaded");
+        setUpdateInfo(data);
+      } else if (data.status === "error") {
+        setStatus("error");
+        setErrorMsg(data.message || "Unknown error.");
+      }
     });
-    const removeProgressListener = window.electronAPI.onUpdaterProgress((data) => {
-      setStatus("downloading");
-      setProgress(data.percent);
-    });
+    const removeProgressListener = window.electronAPI.onUpdaterProgress(
+      (data) => {
+        setStatus("downloading");
+        setProgress(data.percent);
+      },
+    );
     window.electronAPI.checkForUpdates().catch(() => {
-      setStatus("error"); setErrorMsg("Could not reach update server.");
+      setStatus("error");
+      setErrorMsg("Could not reach update server.");
     });
     return () => {
       removeStatusListener?.();
@@ -40,30 +57,85 @@ function SidebarUpdateModal({ onClose }) {
   const body = () => {
     switch (status) {
       case "checking":
-        return <><div className="upd-spinner" /><p className="upd-msg">Checking for updates…</p></>;
+        return (
+          <>
+            <div className="upd-spinner" />
+            <p className="upd-msg">Checking for updates…</p>
+          </>
+        );
       case "up-to-date":
-        return <><div className="upd-icon upd-ok">✓</div><p className="upd-msg" style={{color:"#2e7d32"}}>You're on the latest version.</p></>;
+        return (
+          <>
+            <div className="upd-icon upd-ok">✓</div>
+            <p className="upd-msg" style={{ color: "#2e7d32" }}>
+              You're on the latest version.
+            </p>
+          </>
+        );
       case "available":
-        return <>
-          <div className="upd-icon upd-new">↑</div>
-          <p className="upd-msg"><strong>v{updateInfo?.version}</strong> is available!</p>
-          {updateInfo?.releaseDate && <p className="upd-sub">Released: {new Date(updateInfo.releaseDate).toLocaleDateString()}</p>}
-          <button className="lf-btn upd-btn" onClick={() => { setStatus("downloading"); setProgress(0); window.electronAPI.downloadUpdate(); }}>Download Update</button>
-        </>;
+        return (
+          <>
+            <div className="upd-icon upd-new">↑</div>
+            <p className="upd-msg">
+              <strong>v{updateInfo?.version}</strong> is available!
+            </p>
+            {updateInfo?.releaseDate && (
+              <p className="upd-sub">
+                Released:{" "}
+                {new Date(updateInfo.releaseDate).toLocaleDateString()}
+              </p>
+            )}
+            <button
+              className="lf-btn upd-btn"
+              onClick={() => {
+                setStatus("downloading");
+                setProgress(0);
+                window.electronAPI.downloadUpdate();
+              }}
+            >
+              Download Update
+            </button>
+          </>
+        );
       case "downloading":
-        return <>
-          <div className="upd-progress-wrap"><div className="upd-progress-bar" style={{width:`${progress}%`}} /></div>
-          <p className="upd-msg">Downloading… {progress}%</p>
-        </>;
+        return (
+          <>
+            <div className="upd-progress-wrap">
+              <div
+                className="upd-progress-bar"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="upd-msg">Downloading… {progress}%</p>
+          </>
+        );
       case "downloaded":
-        return <>
-          <div className="upd-icon upd-ok">✓</div>
-          <p className="upd-msg" style={{color:"#2e7d32"}}>v{updateInfo?.version} ready! Restart to install.</p>
-          <button className="lf-btn upd-btn" onClick={() => window.electronAPI.installUpdate()}>Restart &amp; Install</button>
-        </>;
+        return (
+          <>
+            <div className="upd-icon upd-ok">✓</div>
+            <p className="upd-msg" style={{ color: "#2e7d32" }}>
+              v{updateInfo?.version} ready! Restart to install.
+            </p>
+            <button
+              className="lf-btn upd-btn"
+              onClick={() => window.electronAPI.installUpdate()}
+            >
+              Restart &amp; Install
+            </button>
+          </>
+        );
       case "error":
-        return <><div className="upd-icon upd-err">✕</div><p className="upd-msg" style={{color:"#b71c1c"}}>Update check failed.</p><p className="upd-sub">{errorMsg}</p></>;
-      default: return null;
+        return (
+          <>
+            <div className="upd-icon upd-err">✕</div>
+            <p className="upd-msg" style={{ color: "#b71c1c" }}>
+              Update check failed.
+            </p>
+            <p className="upd-sub">{errorMsg}</p>
+          </>
+        );
+      default:
+        return null;
     }
   };
 
@@ -72,7 +144,9 @@ function SidebarUpdateModal({ onClose }) {
       <div className="upd-modal" onClick={(e) => e.stopPropagation()}>
         <div className="upd-modal-header">
           <h3>Check for Updates</h3>
-          <button className="upd-close" onClick={onClose}>✕</button>
+          <button className="upd-close" onClick={onClose}>
+            ✕
+          </button>
         </div>
         <div className="upd-modal-body">{body()}</div>
       </div>
@@ -89,10 +163,15 @@ export default function DashboardPage({ session, userSession, onLogout }) {
 
   useEffect(() => {
     if (window.electronAPI?.getVersion) {
-      window.electronAPI.getVersion().then(setAppVersion).catch(() => {});
+      window.electronAPI
+        .getVersion()
+        .then(setAppVersion)
+        .catch(() => {});
     }
     if (window.electronAPI?.onMenuCheckForUpdates) {
-      const removeMenuListener = window.electronAPI.onMenuCheckForUpdates(() => setShowUpdateModal(true));
+      const removeMenuListener = window.electronAPI.onMenuCheckForUpdates(() =>
+        setShowUpdateModal(true),
+      );
       return removeMenuListener;
     }
   }, []);
@@ -148,10 +227,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
     );
   }
 
-  // ── Admin test override ──────────────────────────────────────────────────────
-  // Logging in as username "admin" unlocks all role-gated features for testing.
   const isAdminTest = profile?.username === "admin";
-
   const isAdviser =
     isAdminTest ||
     profile?.role === "adviser" ||
@@ -224,6 +300,14 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               <span className="nav-icon">🏫</span> Advisory Class
             </button>
 
+            {/* AUTO ID TAB */}
+            <button
+              className={`nav-item ${activeTab === "autoid" ? "active" : ""}`}
+              onClick={() => setActiveTab("autoid")}
+            >
+              <span className="nav-icon">🪪</span> AutoID
+            </button>
+
             {/* TRANSFER LEARNER TAB - VISIBLE ONLY TO GRADE CHAIRMAN */}
             {isGradeChairman && (
               <button
@@ -276,6 +360,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
           {activeTab === "advisory_class" && (
             <AdvisoryClass profile={profile} />
           )}
+          {activeTab === "autoid" && <AutoId profile={profile} />}
           {activeTab === "transfer_learner" && isGradeChairman && (
             <TransferLearner profile={profile} />
           )}
