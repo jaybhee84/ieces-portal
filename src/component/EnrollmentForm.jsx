@@ -94,6 +94,15 @@ const RELIGIONS_WESTERN_MINDANAO = [
   "Other Religion",
 ];
 
+const IECES_SCHOOL_NAME = "Isabela East Central Elementary School";
+
+function getCurrentSchoolYear() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const startYear = today.getMonth() >= 5 ? year : year - 1;
+  return `${startYear}–${startYear + 1}`;
+}
+
 export function EnrollmentForm() {
   const [advisers, setAdvisers] = useState([]);
   const [adviserLoadError, setAdviserLoadError] = useState("");
@@ -289,6 +298,19 @@ export function EnrollmentForm() {
     e.preventDefault();
     setErrorMessage("");
 
+    const { data: school, error: schoolError } = await supabase
+      .from("schools")
+      .select("school_id,name")
+      .eq("name", IECES_SCHOOL_NAME)
+      .maybeSingle();
+
+    if (schoolError || !school?.school_id) {
+      setErrorMessage(
+        "Enrollment cannot be linked to IECES because its School ID is missing from the shared school registry.",
+      );
+      return;
+    }
+
     const constructedFather = fatherDeceased
       ? "DECEASED"
       : formatFullName(father);
@@ -306,6 +328,9 @@ export function EnrollmentForm() {
 
     const payload = {
       ...formData,
+      school_id: String(school.school_id).trim(),
+      school_name: school.name || IECES_SCHOOL_NAME,
+      school_year: getCurrentSchoolYear(),
       father_name: constructedFather,
       mother_name: constructedMother,
       guardian_name: constructedGuardian,
