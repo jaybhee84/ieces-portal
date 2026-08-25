@@ -236,21 +236,25 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
     setLoading(true);
 
     try {
-      const { data: profile, error: profileErr } = await supabase
-        .from("portal_profile")
-        .select("email")
-        .eq("username", username.trim())
-        .single();
-
-      if (profileErr || !profile) {
-        setError("Username not found.");
-        setLoading(false);
-        return;
+      const identifier = username.trim().toLowerCase();
+      let loginEmail = identifier;
+      if (!identifier.includes("@")) {
+        const { data: profile, error: profileErr } = await supabase
+          .from("portal_profile")
+          .select("email")
+          .eq("username", identifier)
+          .single();
+        if (profileErr || !profile) {
+          setError("Username not found.");
+          setLoading(false);
+          return;
+        }
+        loginEmail = profile.email;
       }
 
       const { data: authData, error: authErr } =
         await supabase.auth.signInWithPassword({
-          email: profile.email,
+          email: loginEmail,
           password,
         });
 
@@ -277,7 +281,7 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
 
       <form onSubmit={handleLogin}>
         <div className="lf-group">
-          <label>Username</label>
+          <label>Username or email</label>
           <input
             type="text"
             value={username}
