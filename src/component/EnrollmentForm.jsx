@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { orgAdviserName } from "../lib/orgAdvisers";
+import { PHILIRI_READING_CATEGORIES } from "../lib/readingOptions";
 
 // List of all 45 Barangays in Isabela City
 const ISABELA_CITY_BARANGAYS = [
@@ -66,18 +68,6 @@ const TRIBES_WESTERN_MINDANAO = [
   "Chavacano",
   "Tagalog",
   "Other / Non-IP",
-];
-
-// Phil-IRI Reading Categories
-const PHILIRI_READING_CATEGORIES = [
-  { value: "NGS", label: "Non-Grade Level / Non-Standard (NGS)" },
-  { value: "FF", label: "Frustration — Filipino (FF)" },
-  { value: "FE", label: "Frustration — English (FE)" },
-  { value: "IF", label: "Instructional — Filipino (IF)" },
-  { value: "IE", label: "Instructional — English (IE)" },
-  { value: "INDF", label: "Independent — Filipino (INDF)" },
-  { value: "INDE", label: "Independent — English (INDE)" },
-  { value: "NA", label: "Not Yet Assessed (NA)" },
 ];
 
 // Primary Religions in Western Mindanao
@@ -262,13 +252,7 @@ export function EnrollmentForm() {
           })
           .map((teacher) => ({
             ...teacher,
-            full_name: [
-              teacher.first_name,
-              teacher.middle_name,
-              teacher.family_name,
-            ]
-              .filter(Boolean)
-              .join(" "),
+            full_name: orgAdviserName(teacher),
           }))
           .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
@@ -388,7 +372,7 @@ export function EnrollmentForm() {
   return (
     <div className="max-w-6xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-slate-200 relative">
       <h2 className="text-2xl font-bold text-slate-800 mb-6 border-b pb-3">
-        Learner Enrollment Data
+        Learners Information
       </h2>
 
       {/* Error Message Banner if submission fails */}

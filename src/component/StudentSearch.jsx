@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { Search } from "lucide-react";
+import { learnerDisplayName } from "../lib/learnerRoster";
 
 export function StudentSearchTab() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -61,7 +62,7 @@ export function StudentSearchTab() {
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <h3 className="text-lg font-bold text-slate-800">
-                    {st.family_name}, {st.first_name} {st.middle_name}
+                    {learnerDisplayName(st)}
                   </h3>
                   <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">
                     LRN: {st.lrn}

@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import {
+  adviserGradeKey,
+  isOrgAdviser,
+  legacyProfileIdsForOrgAdviser,
+  orgAdviserName,
+} from "../lib/orgAdvisers";
+import { learnerDisplayName } from "../lib/learnerRoster";
 
 export function TransferLearner({ profile }) {
   const gradeLevel = profile?.grade_level_assigned;
@@ -22,13 +29,39 @@ export function TransferLearner({ profile }) {
     if (!gradeLevel) return;
 
     const fetchAdvisers = async () => {
-      const { data, error } = await supabase
-        .from("portal_profile")
-        .select("id, first_name, family_name, section_assigned")
-        .eq("grade_level_assigned", gradeLevel);
+      const [orgResult, profileResult, legacyProfileResult] = await Promise.all([
+        supabase.from("org_chart").select("*"),
+        supabase.from("portal_profile").select("*"),
+        supabase.from("profiles").select("*"),
+      ]);
+      const { data, error } = orgResult;
 
       if (!error && data) {
-        setAdvisers(data);
+        setAdvisers(
+          data
+            .filter(isOrgAdviser)
+            .filter(
+              (adviser) =>
+                adviserGradeKey(adviser.grade_level) === adviserGradeKey(gradeLevel),
+            )
+            .sort((left, right) =>
+              orgAdviserName(left).localeCompare(orgAdviserName(right)),
+            )
+            .map((adviser) => ({
+              ...adviser,
+              assignment_ids: [
+                String(adviser.id),
+                ...legacyProfileIdsForOrgAdviser(
+                  adviser,
+                  profileResult.data || [],
+                ),
+                ...legacyProfileIdsForOrgAdviser(
+                  adviser,
+                  legacyProfileResult.data || [],
+                ),
+              ],
+            })),
+        );
       }
     };
 
@@ -44,17 +77,20 @@ export function TransferLearner({ profile }) {
 
     const fetchLeftStudents = async () => {
       setLoading(true);
+      const adviser = advisers.find(
+        (item) => String(item.id) === String(leftAdviserId),
+      );
       const { data } = await supabase
         .from("students")
         .select("*")
-        .eq("adviser_id", leftAdviserId);
+        .in("adviser_id", adviser?.assignment_ids || [leftAdviserId]);
 
       setLeftStudents(data || []);
       setLoading(false);
     };
 
     fetchLeftStudents();
-  }, [leftAdviserId]);
+  }, [leftAdviserId, advisers]);
 
   // Fetch learners for Right Class
   useEffect(() => {
@@ -65,17 +101,20 @@ export function TransferLearner({ profile }) {
 
     const fetchRightStudents = async () => {
       setLoading(true);
+      const adviser = advisers.find(
+        (item) => String(item.id) === String(rightAdviserId),
+      );
       const { data } = await supabase
         .from("students")
         .select("*")
-        .eq("adviser_id", rightAdviserId);
+        .in("adviser_id", adviser?.assignment_ids || [rightAdviserId]);
 
       setRightStudents(data || []);
       setLoading(false);
     };
 
     fetchRightStudents();
-  }, [rightAdviserId]);
+  }, [rightAdviserId, advisers]);
 
   // Helper to sort learners: Male A-Z first, Female A-Z second
   const getSortedLearners = (studentsList) => {
@@ -124,18 +163,24 @@ export function TransferLearner({ profile }) {
 
       // Refresh both class lists
       if (leftAdviserId) {
+        const leftAdviser = advisers.find(
+          (item) => String(item.id) === String(leftAdviserId),
+        );
         const { data: leftData } = await supabase
           .from("students")
           .select("*")
-          .eq("adviser_id", leftAdviserId);
+          .in("adviser_id", leftAdviser?.assignment_ids || [leftAdviserId]);
         setLeftStudents(leftData || []);
       }
 
       if (rightAdviserId) {
+        const rightAdviser = advisers.find(
+          (item) => String(item.id) === String(rightAdviserId),
+        );
         const { data: rightData } = await supabase
           .from("students")
           .select("*")
-          .eq("adviser_id", rightAdviserId);
+          .in("adviser_id", rightAdviser?.assignment_ids || [rightAdviserId]);
         setRightStudents(rightData || []);
       }
     } catch (err) {
@@ -294,9 +339,9 @@ function ClassPanel({
               .filter((adv) => adv.id !== otherAdviserId)
               .map((adv) => (
                 <option key={adv.id} value={adv.id}>
-                  {adv.family_name}, {adv.first_name}{" "}
-                  {adv.section_assigned
-                    ? `(Section: ${adv.section_assigned})`
+                  {orgAdviserName(adv)}{" "}
+                  {adv.section || adv.section_assigned
+                    ? `(Section: ${adv.section || adv.section_assigned})`
                     : ""}
                 </option>
               ))}
@@ -353,7 +398,7 @@ function ClassPanel({
                         {idx + 1}
                       </td>
                       <td className="p-2 font-semibold text-slate-800 border-r border-slate-100">
-                        {st.family_name}, {st.first_name} {st.middle_name || ""}
+                        {learnerDisplayName(st)}
                       </td>
                       <td className="p-2 text-center">
                         <button
@@ -407,7 +452,7 @@ function ClassPanel({
                         {sortedLearners.males.length + idx + 1}
                       </td>
                       <td className="p-2 font-semibold text-slate-800 border-r border-slate-100">
-                        {st.family_name}, {st.first_name} {st.middle_name || ""}
+                        {learnerDisplayName(st)}
                       </td>
                       <td className="p-2 text-center">
                         <button

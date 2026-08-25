@@ -1,5 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import {
+  adviserGradeKey,
+  isOrgAdviser,
+  learnerBelongsToOrgAdviser,
+  legacyProfileIdsForOrgAdviser,
+  orgAdviserName,
+} from "../lib/orgAdvisers";
+import { PHILIRI_READING_CATEGORIES } from "../lib/readingOptions";
+
+const IECES_SCHOOL_ID = "126001";
+const PAGE_SIZE = 1000;
 
 // Predefined lists matching the Enrollment Form options
 const ISABELA_CITY_BARANGAYS = [
@@ -80,26 +91,121 @@ const RELIGIONS_WESTERN_MINDANAO = [
   "Other Religion",
 ];
 
+const normalizedGender = (student) =>
+  String(student.gender || student.sex || "").trim().toUpperCase();
+
+const summarize = (studentList) => ({
+  total: studentList.length,
+  male: studentList.filter((student) =>
+    ["M", "MALE", "BOY"].includes(normalizedGender(student)),
+  ).length,
+  female: studentList.filter((student) =>
+    ["F", "FEMALE", "GIRL"].includes(normalizedGender(student)),
+  ).length,
+  beneficiaries: studentList.filter(
+    (student) => student.is_4ps_beneficiary || student.is_4ps,
+  ).length,
+});
+
+const enrollmentTimestamp = (student) =>
+  student.created_at ||
+  student.enrolled_at ||
+  student.enrollment_date ||
+  student.date_enrolled;
+
+const manilaDateKey = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const getPart = (type) => parts.find((part) => part.type === type)?.value;
+  return `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
+};
+
 export function EnrollmentDataTab() {
   const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [orgAdvisers, setOrgAdvisers] = useState([]);
+  const [portalProfiles, setPortalProfiles] = useState([]);
+  const [legacyProfiles, setLegacyProfiles] = useState([]);
 
   // Individual filter states for each demographic card
   const [selectedReligionGrade, setSelectedReligionGrade] = useState("ALL");
   const [selectedTribeGrade, setSelectedTribeGrade] = useState("ALL");
   const [selectedBarangayGrade, setSelectedBarangayGrade] = useState("ALL");
 
-  useEffect(() => {
-    fetchData();
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+
+    const rows = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("students")
+        .select("*")
+        .eq("school_id", IECES_SCHOOL_ID)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error("Error fetching students:", error);
+        setLoadError(error.message);
+        setLoading(false);
+        return;
+      }
+
+      rows.push(...(data || []));
+      if (!data || data.length < PAGE_SIZE) break;
+    }
+
+    const [orgResult, profileResult, legacyProfileResult] = await Promise.all([
+      supabase.from("org_chart").select("*"),
+      supabase.from("portal_profile").select("*"),
+      supabase.from("profiles").select("*"),
+    ]);
+
+    if (orgResult.error) {
+      setLoadError(`Unable to load advisers from the Org Chart: ${orgResult.error.message}`);
+    }
+
+    setStudents(rows);
+    setOrgAdvisers((orgResult.data || []).filter(isOrgAdviser));
+    setPortalProfiles(profileResult.data || []);
+    setLegacyProfiles(legacyProfileResult.data || []);
+    setLoading(false);
   }, []);
 
-  const fetchData = async () => {
-    const { data, error } = await supabase.from("students").select("*");
-    if (error) {
-      console.error("Error fetching students:", error);
-    } else {
-      setStudents(data || []);
-    }
-  };
+  useEffect(() => {
+    fetchData();
+    const channel = supabase
+      .channel("portal:enrollment-summary")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "students" },
+        fetchData,
+      )
+      .subscribe();
+
+    const orgChannel = supabase
+      .channel("portal:enrollment-org-advisers")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "org_chart" },
+        fetchData,
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(orgChannel);
+    };
+  }, [fetchData]);
 
   const extractBarangay = (address) => {
     if (!address) return "";
@@ -169,15 +275,53 @@ export function EnrollmentDataTab() {
     { key: 6, label: "Grade 6" },
   ];
 
-  const readingCategories = [
-    "Non-Reader",
-    "Frustration",
-    "Instructional",
-    "Independent",
-  ];
-
-  // Enrolment Overall Totals
-  const grandTotalEnrolled = students.length;
+  const overallSummary = useMemo(() => summarize(students), [students]);
+  const today = manilaDateKey(new Date());
+  const enrolledToday = students.filter(
+    (student) => manilaDateKey(enrollmentTimestamp(student)) === today,
+  ).length;
+  const gradeSummaries = gradeLevels.map((level) => {
+    const matchingStudents = students.filter((student) => {
+      if (level.key === "SNED") {
+        return String(student.grade_level).toUpperCase() === "SNED";
+      }
+      return Number(student.grade_level) === level.key;
+    });
+    return { ...level, ...summarize(matchingStudents) };
+  });
+  const advisoryRows = useMemo(
+    () =>
+      orgAdvisers
+        .map((adviser) => {
+          const assignmentIds = new Set([
+            ...legacyProfileIdsForOrgAdviser(adviser, portalProfiles),
+            ...legacyProfileIdsForOrgAdviser(adviser, legacyProfiles),
+          ]);
+          const assignedStudents = students.filter((student) =>
+            learnerBelongsToOrgAdviser(
+              student,
+              adviser,
+              [...assignmentIds],
+            ),
+          );
+          return { adviser, ...summarize(assignedStudents) };
+        })
+        .sort(
+          (left, right) =>
+            adviserGradeKey(left.adviser.grade_level).localeCompare(
+              adviserGradeKey(right.adviser.grade_level),
+              undefined,
+              { numeric: true },
+            ) || orgAdviserName(left.adviser).localeCompare(orgAdviserName(right.adviser)),
+        ),
+    [legacyProfiles, orgAdvisers, portalProfiles, students],
+  );
+  const advisoryGradeGroups = gradeLevels.map((grade) => ({
+    ...grade,
+    rows: advisoryRows.filter(
+      (row) => adviserGradeKey(row.adviser.grade_level) === String(grade.key),
+    ),
+  }));
 
   // Reading Assessment Totals per Category
   const getCategoryTotal = (cat) => {
@@ -185,110 +329,148 @@ export function EnrollmentDataTab() {
       (s) =>
         Number(s.grade_level) >= 1 &&
         Number(s.grade_level) <= 6 &&
-        (s.reading_level || "Non-Reader") === cat,
+        s.reading_category === cat,
     ).length;
   };
 
   const grandTotalReading = students.filter(
-    (s) => Number(s.grade_level) >= 1 && Number(s.grade_level) <= 6,
+    (s) =>
+      Number(s.grade_level) >= 1 &&
+      Number(s.grade_level) <= 6 &&
+      PHILIRI_READING_CATEGORIES.some(
+        (category) => category.value === s.reading_category,
+      ),
   ).length;
 
   return (
     <div className="space-y-8">
-      {/* 1. ENROLMENT SUMMARY */}
+      {/* 1. ENROLLMENT SUMMARY */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <h2 className="text-xl font-bold text-slate-800 mb-4">
-          Enrolment Summary
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-5">
+          <div>
+            <h2 className="text-xl font-bold text-[#7b1a1a]">
+              Learner Enrollment
+            </h2>
+            <p className="mt-1 text-xs text-[#7a6060]">
+              Live school-wide totals for School ID {IECES_SCHOOL_ID}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={fetchData}
+            disabled={loading}
+            className="self-start px-4 py-2 rounded-lg border border-[#7b1a1a] bg-white text-[#7b1a1a] text-xs font-extrabold hover:bg-[#fff7ec] disabled:opacity-50"
+          >
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
 
-        {/* Constrained width container to prevent max-width stretched table */}
-        <div className="max-w-2xl">
-          <table className="w-full text-left border-collapse text-sm border border-slate-300">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 text-xs font-bold uppercase border-b border-slate-300">
-                <th className="p-3 border-r border-slate-300 w-48 text-center">
-                  GRADE LEVEL / GENDER
-                </th>
-                <th className="p-3 border-r border-slate-300 text-center">
-                  4P'S BENEFICIARIES
-                </th>
-                <th className="p-3 text-center w-28">TOTAL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gradeLevels.map((lvl) => {
-                const glStudents = students.filter((s) => {
-                  if (lvl.key === "SNED") {
-                    return String(s.grade_level).toUpperCase() === "SNED";
-                  }
-                  return Number(s.grade_level) === lvl.key;
-                });
+        {loadError && (
+          <div className="mb-5 p-4 rounded-xl border border-red-200 bg-red-50 text-sm text-red-700">
+            Unable to load enrollment data: {loadError}
+          </div>
+        )}
 
-                const males = glStudents.filter((s) => s.gender === "Male");
-                const females = glStudents.filter((s) => s.gender === "Female");
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          {[
+            ["Total Learners", overallSummary.total],
+            ["Enrolled Today", enrolledToday],
+            ["Male", overallSummary.male],
+            ["Female", overallSummary.female],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className="p-4 rounded-xl bg-white border-t-[3px] border-[#7b1a1a] shadow-[0_2px_12px_rgba(123,26,26,0.07)]"
+            >
+              <span className="block min-h-7 text-[11px] font-bold text-[#806868]">
+                {label}
+              </span>
+              <strong className="text-2xl text-[#7b1a1a]">{value}</strong>
+            </div>
+          ))}
+        </div>
 
-                const male4psCount = males.filter(
-                  (s) => s.is_4ps_beneficiary || s.is_4ps,
-                ).length;
-                const female4psCount = females.filter(
-                  (s) => s.is_4ps_beneficiary || s.is_4ps,
-                ).length;
+        <div className="p-5 rounded-xl bg-white shadow-[0_2px_14px_rgba(123,26,26,0.07)] border border-[#eee5e1]">
+          <div className="mb-4">
+            <h3 className="font-bold text-[#491919]">Enrollment by Grade Level</h3>
+            <p className="mt-1 text-xs text-[#7a6060]">
+              Live totals from Kinder through Grade 6 and SNED.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {gradeSummaries.map((row) => (
+              <div
+                key={row.key}
+                className="p-3.5 rounded-lg border border-[#e6d9d4] bg-[#fcfaf9]"
+              >
+                <span className="block text-[11px] font-bold text-[#806868]">
+                  {row.label}
+                </span>
+                <strong className="block my-1 text-2xl text-[#7b1a1a]">
+                  {row.total}
+                </strong>
+                <small className="block text-[11px] font-semibold text-[#806868]">
+                  {row.male} Male · {row.female} Female
+                </small>
+                <small className="block mt-1 text-[10px] font-bold text-[#9a6a19]">
+                  {row.beneficiaries} 4Ps beneficiaries
+                </small>
+              </div>
+            ))}
+          </div>
+        </div>
 
-                return (
-                  <React.Fragment key={lvl.label}>
-                    {/* Grade Level Header Row (Left-Aligned) */}
-                    <tr className="bg-slate-100 border-t-2 border-b border-slate-300">
-                      <td
-                        colSpan="3"
-                        className="p-2.5 px-4 font-bold text-slate-800 text-xs uppercase tracking-wider text-left"
-                      >
-                        {lvl.label}
-                      </td>
-                    </tr>
-
-                    {/* Male Row */}
-                    <tr className="hover:bg-slate-50 transition-colors border-b border-slate-200">
-                      <td className="p-3 font-bold text-blue-600 border-r border-slate-200 text-center">
-                        MALE
-                      </td>
-                      <td className="p-3 font-semibold text-slate-700 border-r border-slate-200 text-center">
-                        {male4psCount}
-                      </td>
-                      <td className="p-3 font-bold text-slate-800 text-center">
-                        {males.length}
-                      </td>
-                    </tr>
-
-                    {/* Female Row */}
-                    <tr className="hover:bg-slate-50 transition-colors border-b border-slate-200">
-                      <td className="p-3 font-bold text-pink-600 border-r border-slate-200 text-center">
-                        FEMALE
-                      </td>
-                      <td className="p-3 font-semibold text-slate-700 border-r border-slate-200 text-center">
-                        {female4psCount}
-                      </td>
-                      <td className="p-3 font-bold text-slate-800 text-center">
-                        {females.length}
-                      </td>
-                    </tr>
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900">
-                <td
-                  colSpan="2"
-                  className="p-3 border-r border-slate-300 text-right uppercase tracking-wider"
+        <div className="mt-5 p-5 rounded-xl bg-white border-2 border-[#e2c36b] shadow-[0_2px_14px_rgba(123,26,26,0.07)]">
+          <div className="mb-4">
+            <h3 className="font-bold text-[#491919]">Advisory Classes</h3>
+            <p className="mt-1 text-xs text-[#7a6060]">
+              Adviser names and grade assignments come directly from the organizational chart.
+            </p>
+          </div>
+          {advisoryRows.length === 0 ? (
+            <div className="p-6 rounded-lg border border-dashed border-[#d9c9c3] text-center text-sm text-[#7a6060]">
+              No advisers are currently assigned in the Org Chart.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
+              {advisoryGradeGroups.map((group) => (
+                <section
+                  key={group.key}
+                  className="overflow-hidden rounded-xl border border-[#e3d4ce] bg-white"
                 >
-                  GRAND TOTAL ENROLLED:
-                </td>
-                <td className="p-3 text-center text-base font-black">
-                  {grandTotalEnrolled}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+                  <header className="min-h-[58px] px-3 py-2.5 bg-[#7b1a1a] text-white flex flex-col justify-center">
+                    <h4 className="m-0 text-xs font-extrabold uppercase tracking-wide">
+                      {group.label}
+                    </h4>
+                    <span className="mt-0.5 text-[10px] font-semibold text-white/75">
+                      {group.rows.reduce((total, row) => total + row.total, 0)} learners · {group.rows.length} adviser{group.rows.length === 1 ? "" : "s"}
+                    </span>
+                  </header>
+                  <div className="divide-y divide-[#eee5e1]">
+                    {group.rows.length === 0 ? (
+                      <div className="p-4 text-xs italic text-[#9a8585]">
+                        No adviser assigned
+                      </div>
+                    ) : (
+                      group.rows.map((row) => (
+                        <div
+                          key={row.adviser.id}
+                          className="p-3 bg-[#fcfaf9] hover:bg-[#fff7ec]"
+                        >
+                          <strong className="block text-xs leading-snug text-[#491919]">
+                            {orgAdviserName(row.adviser)}
+                          </strong>
+                          <span className="block mt-1 text-[10px] text-[#806868]">
+                            {row.total} learners · {row.male} Male · {row.female} Female
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* DEMOGRAPHIC CATEGORIES CARDS WITH GRADE FILTER DROPDOWNS */}
@@ -412,7 +594,7 @@ export function EnrollmentDataTab() {
       {/* 2. READING LEVEL ASSESSMENT SUMMARY (GRADE 1 TO 6) */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
         <h2 className="text-xl font-bold text-slate-800 mb-4">
-          Reading Level Assessment Summary (Grade 1 - Grade 6)
+          Phil-IRI Reading Assessment Summary (Grade 1 - Grade 6)
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-sm border border-slate-300">
@@ -433,22 +615,22 @@ export function EnrollmentDataTab() {
               </tr>
             </thead>
             <tbody>
-              {readingCategories.map((cat) => {
-                const catTotal = getCategoryTotal(cat);
+              {PHILIRI_READING_CATEGORIES.map((category) => {
+                const catTotal = getCategoryTotal(category.value);
 
                 return (
                   <tr
-                    key={cat}
+                    key={category.value}
                     className="hover:bg-slate-50 transition-colors border-b border-slate-200"
                   >
                     <td className="p-3 font-bold text-slate-700 border-r border-slate-200">
-                      {cat}
+                      {category.label}
                     </td>
                     {readingGrades.map((g) => {
                       const count = students.filter(
                         (s) =>
                           Number(s.grade_level) === g.key &&
-                          (s.reading_level || "Non-Reader") === cat,
+                          s.reading_category === category.value,
                       ).length;
 
                       return (
@@ -474,7 +656,11 @@ export function EnrollmentDataTab() {
                 </td>
                 {readingGrades.map((g) => {
                   const gradeTotal = students.filter(
-                    (s) => Number(s.grade_level) === g.key,
+                    (s) =>
+                      Number(s.grade_level) === g.key &&
+                      PHILIRI_READING_CATEGORIES.some(
+                        (category) => category.value === s.reading_category,
+                      ),
                   ).length;
                   return (
                     <td

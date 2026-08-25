@@ -1,11 +1,47 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import { orgAdviserName } from "../lib/orgAdvisers";
+import { loadAdvisoryRoster } from "../lib/advisoryRosterData";
+import {
+  displayBirthdate,
+  learnerAge,
+  learnerBarangay,
+  learnerDisplayName,
+  learnerGenderLabel,
+  learnerGradeLabel,
+  learnerLrn,
+  learnerNutrition,
+  nutritionBadgeClass,
+} from "../lib/learnerRoster";
+import {
+  ISABELA_CITY_BARANGAYS,
+  WESTERN_MINDANAO_RELIGIONS,
+  WESTERN_MINDANAO_TRIBES,
+  optionsWithCurrentValue,
+} from "../lib/demographicOptions";
+import { PHILIRI_READING_CATEGORIES } from "../lib/readingOptions";
+
+const addressWithBarangay = (address, barangay) => {
+  const current = String(address || "").trim();
+  if (!barangay) return current;
+  if (/Brgy\.\s*[^,]+/i.test(current)) {
+    return current.replace(/Brgy\.\s*[^,]+/i, `Brgy. ${barangay}`);
+  }
+  if (/Isabela City$/i.test(current)) {
+    const prefix = current.replace(/,?\s*Isabela City$/i, "").trim();
+    return `${prefix ? `${prefix}, ` : ""}Brgy. ${barangay}, Isabela City`;
+  }
+  return `${current ? `${current}, ` : ""}Brgy. ${barangay}, Isabela City`;
+};
 
 export function AdvisoryClass({ profile }) {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(null); // studentId being saved
   const [message, setMessage] = useState("");
+  const [orgAdviser, setOrgAdviser] = useState(null);
+  const [demographicDrafts, setDemographicDrafts] = useState({});
+  const [dirtyStudentIds, setDirtyStudentIds] = useState([]);
+  const [savingDemographics, setSavingDemographics] = useState(false);
 
   const isGradeChairman = profile?.role === "grade_chairman";
 
@@ -22,7 +58,19 @@ export function AdvisoryClass({ profile }) {
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    const orgChannel = supabase
+      .channel("advisory_org_chart_sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "org_chart" },
+        () => fetchStudents(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(orgChannel);
+    };
   }, [profile]);
 
   const fetchStudents = async () => {
@@ -32,52 +80,107 @@ export function AdvisoryClass({ profile }) {
     }
 
     setLoading(true);
-    let query = supabase.from("students").select("*");
-
-    if (isGradeChairman) {
-      query = query.eq("grade_level", profile.grade_level_assigned);
-    } else {
-      query = query.eq("adviser_id", profile.id);
-    }
-
-    const { data, error } = await query.order("family_name", {
-      ascending: true,
+    const result = await loadAdvisoryRoster(profile, isGradeChairman);
+    setOrgAdviser(result.orgAdviser);
+    const sortedStudents = [...result.students].sort((left, right) => {
+      const genderRank = (student) => {
+        const gender = learnerGenderLabel(student);
+        if (gender === "Male") return 0;
+        if (gender === "Female") return 1;
+        return 2;
+      };
+      return (
+        genderRank(left) - genderRank(right) ||
+        learnerDisplayName(left).localeCompare(learnerDisplayName(right))
+      );
     });
-
-    if (!error && data) setStudents(data);
+    setStudents(sortedStudents);
+    setDemographicDrafts(
+      Object.fromEntries(
+        sortedStudents.map((student) => {
+          const barangay = learnerBarangay(student);
+          return [
+            String(student.id),
+            {
+              religion: student.religion || "",
+              tribe: student.tribe || "",
+              barangay: barangay === "—" ? "" : barangay,
+              reading_category: student.reading_category || "",
+            },
+          ];
+        }),
+      ),
+    );
+    setDirtyStudentIds([]);
+    if (result.error) {
+      setMessage(`Unable to load learners: ${result.error.message}`);
+    }
     setLoading(false);
   };
 
-  const handleReadingLevelChange = async (studentId, readingLevel) => {
-    setSaving(studentId);
+  const updateDemographicDraft = (studentId, field, value) => {
+    const key = String(studentId);
+    setDemographicDrafts((current) => ({
+      ...current,
+      [key]: { ...current[key], [field]: value },
+    }));
+    setDirtyStudentIds((current) =>
+      current.includes(key) ? current : [...current, key],
+    );
+  };
+
+  const saveDemographicChanges = async () => {
+    if (!dirtyStudentIds.length) return;
+    setSavingDemographics(true);
     setMessage("");
 
-    const { error } = await supabase
-      .from("students")
-      .update({ reading_level: readingLevel })
-      .eq("id", studentId);
+    const updates = dirtyStudentIds.map((studentId) => {
+        const student = students.find(
+          (candidate) => String(candidate.id) === studentId,
+        );
+        const draft = demographicDrafts[studentId];
+        return {
+          id: studentId,
+          religion: draft?.religion || null,
+          tribe: draft?.tribe || null,
+          address: addressWithBarangay(student?.address, draft?.barangay),
+          reading_category: draft?.reading_category || null,
+        };
+      });
+
+    const { data: savedCount, error } = await supabase.rpc(
+      "save_advisory_demographics",
+      { p_updates: updates },
+    );
 
     if (error) {
-      setMessage("Failed to update reading level. Please try again.");
+      setMessage(`Failed to save learner data: ${error.message}`);
     } else {
-      setMessage("Reading level updated.");
-      setTimeout(() => setMessage(""), 2500);
-      fetchStudents();
+      setMessage(`${savedCount} learner record${savedCount === 1 ? "" : "s"} saved to Supabase.`);
+      setDirtyStudentIds([]);
+      await fetchStudents();
     }
-
-    setSaving(null);
+    setSavingDemographics(false);
   };
 
   // Count breakdown
-  const maleCount = students.filter((s) => s.gender === "Male").length;
-  const femaleCount = students.filter((s) => s.gender === "Female").length;
+  const maleCount = students.filter(
+    (student) => learnerGenderLabel(student) === "Male",
+  ).length;
+  const femaleCount = students.filter(
+    (student) => learnerGenderLabel(student) === "Female",
+  ).length;
 
-  const readingBreakdown = {
-    "Non-Reader": students.filter((s) => (s.reading_level || "Non-Reader") === "Non-Reader").length,
-    Frustration: students.filter((s) => s.reading_level === "Frustration").length,
-    Instructional: students.filter((s) => s.reading_level === "Instructional").length,
-    Independent: students.filter((s) => s.reading_level === "Independent").length,
-  };
+  const readingBreakdown = Object.fromEntries(
+    PHILIRI_READING_CATEGORIES.map((category) => [
+      category.label,
+      students.filter(
+        (student) =>
+          demographicDrafts[String(student.id)]?.reading_category ===
+          category.value,
+      ).length,
+    ]),
+  );
 
   return (
     <div className="dash-card">
@@ -85,7 +188,7 @@ export function AdvisoryClass({ profile }) {
         <h2>
           {isGradeChairman
             ? `Grade ${profile?.grade_level_assigned} — All Sections`
-            : `Advisory Class — ${profile?.section_assigned || "My Section"}`}
+            : `Advisory Class — ${orgAdviser ? orgAdviserName(orgAdviser) : "Not linked in Org Chart"}`}
         </h2>
         <p>
           Total: {students.length} Learners &nbsp;|&nbsp; Male: {maleCount}{" "}
@@ -140,20 +243,46 @@ export function AdvisoryClass({ profile }) {
         </div>
       )}
 
+      <div className="mb-3 flex items-center justify-end gap-3">
+        {dirtyStudentIds.length > 0 && (
+          <span className="text-xs font-semibold text-amber-700">
+            {dirtyStudentIds.length} learner{dirtyStudentIds.length === 1 ? "" : "s"} modified
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={saveDemographicChanges}
+          disabled={!dirtyStudentIds.length || savingDemographics}
+          className="px-5 py-2 rounded-lg bg-[#7b1a1a] text-white text-xs font-bold shadow disabled:bg-slate-300 disabled:cursor-not-allowed hover:bg-[#641414]"
+        >
+          {savingDemographics ? "Saving..." : "Save Changes"}
+        </button>
+      </div>
+
       {loading ? (
         <div style={{ textAlign: "center", padding: "40px", color: "#888" }}>
           Loading learners…
         </div>
       ) : (
-        <div className="dash-table-wrapper">
-          <table className="dash-table">
+        <div className="dash-table-wrapper advisory-roster-scroll">
+          <table className="dash-table" style={{ minWidth: "1420px" }}>
             <thead>
               <tr>
-                <th>#</th>
+                <th className="sticky-roster-no">No.</th>
+                <th className="sticky-roster-name">
+                  Learner Name
+                </th>
+                <th className="sticky-roster-photo">Photo</th>
                 <th>LRN</th>
-                <th>Learner Name</th>
+                <th>Grade Level</th>
                 <th>Gender</th>
-                {isGradeChairman && <th>Grade</th>}
+                <th>Birthdate</th>
+                <th>Age</th>
+                <th>Religion</th>
+                <th>Tribe</th>
+                <th>Barangay</th>
+                <th>BMI Status</th>
+                <th>HFA Status</th>
                 <th>Reading Level</th>
               </tr>
             </thead>
@@ -161,46 +290,112 @@ export function AdvisoryClass({ profile }) {
               {students.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={isGradeChairman ? 6 : 5}
+                    colSpan="14"
                     style={{ textAlign: "center", padding: "24px", color: "#999" }}
                   >
                     No learners assigned to your advisory class yet.
                   </td>
                 </tr>
               ) : (
-                students.map((st, idx) => (
-                  <tr key={st.id}>
-                    <td style={{ color: "#aaa", fontSize: "0.8rem" }}>
-                      {idx + 1}
-                    </td>
-                    <td className="font-mono">{st.lrn}</td>
-                    <td className="font-bold">
-                      {st.family_name}, {st.first_name}{" "}
-                      {st.middle_name ? st.middle_name.charAt(0) + "." : ""}
-                    </td>
-                    <td>{st.gender}</td>
-                    {isGradeChairman && (
-                      <td>
-                        {st.grade_level === 0 ? "Kinder" : `Grade ${st.grade_level}`}
+                students.map((st, idx) => {
+                  const photo = st.photo_url || st.photo;
+                  const nutrition = learnerNutrition(st);
+                  const draft = demographicDrafts[String(st.id)] || {};
+                  return (
+                    <tr key={st.id}>
+                      <td className="sticky-roster-no font-bold text-center text-[#7b1a1a]">
+                        {idx + 1}
                       </td>
-                    )}
-                    <td>
-                      <select
-                        value={st.reading_level || "Non-Reader"}
-                        onChange={(e) =>
-                          handleReadingLevelChange(st.id, e.target.value)
-                        }
-                        disabled={saving === st.id}
-                        className="table-select"
-                      >
-                        <option value="Non-Reader">Non-Reader</option>
-                        <option value="Frustration">Frustration</option>
-                        <option value="Instructional">Instructional</option>
-                        <option value="Independent">Independent</option>
-                      </select>
-                    </td>
-                  </tr>
-                ))
+                      <td className="sticky-roster-name font-bold">
+                        {learnerDisplayName(st)}
+                      </td>
+                      <td className="sticky-roster-photo">
+                        {photo ? (
+                          <img
+                            src={photo}
+                            alt={`${learnerDisplayName(st)} profile`}
+                            className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 grid place-items-center text-slate-400">
+                            👤
+                          </div>
+                        )}
+                      </td>
+                      <td className="font-mono whitespace-nowrap">{learnerLrn(st)}</td>
+                      <td className="whitespace-nowrap font-semibold">{learnerGradeLabel(st)}</td>
+                      <td className="font-semibold">{learnerGenderLabel(st)}</td>
+                      <td className="whitespace-nowrap">{displayBirthdate(st.birthdate)}</td>
+                      <td className="text-center">{learnerAge(st)}</td>
+                      <td>
+                        <select
+                          value={draft.religion || ""}
+                          onChange={(event) => updateDemographicDraft(st.id, "religion", event.target.value)}
+                          className="table-select min-w-[150px]"
+                        >
+                          <option value="">Select religion</option>
+                          {optionsWithCurrentValue(WESTERN_MINDANAO_RELIGIONS, draft.religion).map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          value={draft.tribe || ""}
+                          onChange={(event) => updateDemographicDraft(st.id, "tribe", event.target.value)}
+                          className="table-select min-w-[145px]"
+                        >
+                          <option value="">Select tribe</option>
+                          {optionsWithCurrentValue(WESTERN_MINDANAO_TRIBES, draft.tribe).map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          value={draft.barangay || ""}
+                          onChange={(event) => updateDemographicDraft(st.id, "barangay", event.target.value)}
+                          className="table-select min-w-[150px]"
+                        >
+                          <option value="">Select barangay</option>
+                          {optionsWithCurrentValue(ISABELA_CITY_BARANGAYS, draft.barangay).map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <span className={`inline-block px-2 py-1 rounded-full border text-[10px] font-bold whitespace-nowrap ${nutritionBadgeClass(nutrition.bmi)}`}>
+                          {nutrition.bmi}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`inline-block px-2 py-1 rounded-full border text-[10px] font-bold whitespace-nowrap ${nutritionBadgeClass(nutrition.hfa)}`}>
+                          {nutrition.hfa}
+                        </span>
+                      </td>
+                      <td>
+                        <select
+                          value={draft.reading_category || ""}
+                          onChange={(event) =>
+                            updateDemographicDraft(
+                              st.id,
+                              "reading_category",
+                              event.target.value,
+                            )
+                          }
+                          className="table-select"
+                        >
+                          <option value="">Select Phil-IRI category</option>
+                          {PHILIRI_READING_CATEGORIES.map((category) => (
+                            <option key={category.value} value={category.value}>
+                              {category.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

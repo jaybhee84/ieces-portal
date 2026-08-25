@@ -7,6 +7,27 @@ import { EnrollmentDataTab } from "./EnrollmentDataTab";
 import { AdvisoryClass } from "./AdvisoryClass";
 import { TransferLearner } from "./TransferLearner";
 import { AutoId } from "./AutoId"; // <--- IMPORT AUTO ID
+import {
+  adviserGradeKey,
+  findOrgAdviserForProfile,
+  isOrgAdviser,
+  learnerBelongsToOrgAdviser,
+  legacyProfileIdsForOrgAdviser,
+  orgAdviserName,
+} from "../lib/orgAdvisers";
+import { loadAdvisoryRoster } from "../lib/advisoryRosterData";
+import { PHILIRI_READING_CATEGORIES } from "../lib/readingOptions";
+import {
+  displayBirthdate,
+  learnerAge,
+  learnerBarangay,
+  learnerDisplayName,
+  learnerGenderLabel,
+  learnerGradeLabel,
+  learnerLrn,
+  learnerNutrition,
+  nutritionBadgeClass,
+} from "../lib/learnerRoster";
 
 // ── Sidebar update modal ──────────────────────────────────────────────────────
 function SidebarUpdateModal({ onClose }) {
@@ -274,7 +295,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               className={`nav-item ${activeTab === "enrollment" ? "active" : ""}`}
               onClick={() => setActiveTab("enrollment")}
             >
-              <span className="nav-icon">📝</span> Enrolment
+              <span className="nav-icon">📝</span> Enrollment
             </button>
 
             {isAdviser && (
@@ -282,7 +303,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
                 className={`nav-item ${activeTab === "advisory" ? "active" : ""}`}
                 onClick={() => setActiveTab("advisory")}
               >
-                <span className="nav-icon">👨‍🏫</span> Advisory List
+                <span className="nav-icon">🏫</span> Advisory Class
               </button>
             )}
 
@@ -290,14 +311,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               className={`nav-item ${activeTab === "data" ? "active" : ""}`}
               onClick={() => setActiveTab("data")}
             >
-              <span className="nav-icon">📊</span> Enrolment Data
-            </button>
-
-            <button
-              className={`nav-item ${activeTab === "advisory_class" ? "active" : ""}`}
-              onClick={() => setActiveTab("advisory_class")}
-            >
-              <span className="nav-icon">🏫</span> Advisory Class
+              <span className="nav-icon">📊</span> Learners Information
             </button>
 
             {/* AUTO ID TAB */}
@@ -351,15 +365,11 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         <main className="dash-content">
           {activeTab === "enrollment" && <EnrollmentForm />}
           {activeTab === "advisory" && isAdviser && (
-            <AdvisoryListTab
-              profile={profile}
-              isGradeChairman={isGradeChairman}
-            />
-          )}
-          {activeTab === "data" && <EnrollmentDataTab />}
-          {activeTab === "advisory_class" && (
             <AdvisoryClass profile={profile} />
           )}
+          <div style={{ display: activeTab === "data" ? "block" : "none" }}>
+            <EnrollmentDataTab />
+          </div>
           {activeTab === "autoid" && <AutoId profile={profile} />}
           {activeTab === "transfer_learner" && isGradeChairman && (
             <TransferLearner profile={profile} />
@@ -375,6 +385,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
 function AdvisoryListTab({ profile, isGradeChairman }) {
   const [students, setStudents] = useState([]);
   const [otherAdvisers, setOtherAdvisers] = useState([]);
+  const [linkedOrgAdviser, setLinkedOrgAdviser] = useState(null);
 
   useEffect(() => {
     fetchAdvisoryStudents();
@@ -391,28 +402,65 @@ function AdvisoryListTab({ profile, isGradeChairman }) {
       )
       .subscribe();
 
+    const orgChannel = supabase
+      .channel("advisory_list_org_chart_sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "org_chart" },
+        () => {
+          fetchAdvisoryStudents();
+          if (isGradeChairman) fetchGradeAdvisers();
+        },
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(orgChannel);
     };
   }, [profile]);
 
   const fetchAdvisoryStudents = async () => {
-    let query = supabase.from("students").select("*");
-    if (!isGradeChairman) {
-      query = query.eq("adviser_id", profile?.id);
-    } else {
-      query = query.eq("grade_level", profile?.grade_level_assigned);
-    }
-    const { data } = await query.order("family_name", { ascending: true });
-    if (data) setStudents(data);
+    const result = await loadAdvisoryRoster(profile, isGradeChairman);
+    setLinkedOrgAdviser(result.orgAdviser);
+    setStudents(result.students);
   };
 
   const fetchGradeAdvisers = async () => {
-    const { data } = await supabase
-      .from("portal_profile")
-      .select("id, first_name, family_name, section_assigned")
-      .eq("grade_level_assigned", profile?.grade_level_assigned);
-    if (data) setOtherAdvisers(data);
+    const [orgResult, profileResult, legacyProfileResult] = await Promise.all([
+      supabase.from("org_chart").select("*"),
+      supabase.from("portal_profile").select("*"),
+      supabase.from("profiles").select("*"),
+    ]);
+    const { data } = orgResult;
+    if (data) {
+      setOtherAdvisers(
+        data
+          .filter(isOrgAdviser)
+          .filter(
+            (adviser) =>
+              adviserGradeKey(adviser.grade_level) ===
+              adviserGradeKey(profile?.grade_level_assigned),
+          )
+          .sort((left, right) =>
+            orgAdviserName(left).localeCompare(orgAdviserName(right)),
+          )
+          .map((adviser) => ({
+            ...adviser,
+            assignment_ids: [
+              String(adviser.id),
+              ...legacyProfileIdsForOrgAdviser(
+                adviser,
+                profileResult.data || [],
+              ),
+              ...legacyProfileIdsForOrgAdviser(
+                adviser,
+                legacyProfileResult.data || [],
+              ),
+            ],
+          })),
+      );
+    }
   };
 
   const handleTransfer = async (studentId, newAdviserId) => {
@@ -423,10 +471,10 @@ function AdvisoryListTab({ profile, isGradeChairman }) {
     fetchAdvisoryStudents();
   };
 
-  const handleReadingCategoryChange = async (studentId, readingLevel) => {
+  const handleReadingCategoryChange = async (studentId, readingCategory) => {
     await supabase
       .from("students")
-      .update({ reading_level: readingLevel })
+      .update({ reading_category: readingCategory })
       .eq("id", studentId);
     fetchAdvisoryStudents();
   };
@@ -437,18 +485,28 @@ function AdvisoryListTab({ profile, isGradeChairman }) {
         <h2>
           {isGradeChairman
             ? `Grade ${profile?.grade_level_assigned} Overview (Grade Chairman)`
-            : "My Advisory Learners"}
+            : linkedOrgAdviser
+              ? `${orgAdviserName(linkedOrgAdviser)} — Advisory Learners`
+              : "Adviser not linked in Org Chart"}
         </h2>
         <p>Total Enrolled: {students.length} Learners</p>
       </div>
 
       <div className="dash-table-wrapper">
-        <table className="dash-table">
+        <table className="dash-table" style={{ minWidth: "1320px" }}>
           <thead>
             <tr>
+              <th>No.</th>
+              <th>Photo</th>
               <th>LRN</th>
               <th>Learner Name</th>
-              <th>Gender</th>
+              <th>Birthdate</th>
+              <th>Age</th>
+              <th>Religion</th>
+              <th>Tribe</th>
+              <th>Barangay</th>
+              <th>BMI Status</th>
+              <th>HFA Status</th>
               <th>Reading Level</th>
               {isGradeChairman && <th>Transfer Advisory</th>}
             </tr>
@@ -457,51 +515,65 @@ function AdvisoryListTab({ profile, isGradeChairman }) {
             {students.length === 0 ? (
               <tr>
                 <td
-                  colSpan={isGradeChairman ? "5" : "4"}
+                  colSpan={isGradeChairman ? "13" : "12"}
                   style={{ textAlign: "center" }}
                 >
                   No learners assigned yet.
                 </td>
               </tr>
             ) : (
-              students.map((st) => (
-                <tr key={st.id}>
-                  <td className="font-mono">{st.lrn}</td>
-                  <td className="font-bold">
-                    {st.family_name}, {st.first_name} {st.middle_name}
-                  </td>
-                  <td>{st.gender}</td>
+              students.map((st, index) => {
+                const nutrition = learnerNutrition(st);
+                const photo = st.photo_url || st.photo;
+                return <tr key={st.id}>
+                  <td className="font-bold text-center text-[#7b1a1a]">{index + 1}</td>
+                  <td>{photo ? <img src={photo} alt={`${learnerDisplayName(st)} profile`} className="w-10 h-10 rounded-full object-cover border border-slate-200" /> : <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 grid place-items-center text-slate-400">👤</div>}</td>
+                  <td className="font-mono whitespace-nowrap">{learnerLrn(st)}</td>
+                  <td className="font-bold min-w-[180px]">{learnerDisplayName(st)}</td>
+                  <td className="whitespace-nowrap">{displayBirthdate(st.birthdate)}</td>
+                  <td className="text-center">{learnerAge(st)}</td>
+                  <td>{st.religion || "—"}</td>
+                  <td>{st.tribe || "—"}</td>
+                  <td>{learnerBarangay(st)}</td>
+                  <td><span className={`inline-block px-2 py-1 rounded-full border text-[10px] font-bold whitespace-nowrap ${nutritionBadgeClass(nutrition.bmi)}`}>{nutrition.bmi}</span></td>
+                  <td><span className={`inline-block px-2 py-1 rounded-full border text-[10px] font-bold whitespace-nowrap ${nutritionBadgeClass(nutrition.hfa)}`}>{nutrition.hfa}</span></td>
                   <td>
                     <select
-                      value={st.reading_level || "Non-Reader"}
+                      value={st.reading_category || ""}
                       onChange={(e) =>
                         handleReadingCategoryChange(st.id, e.target.value)
                       }
                       className="table-select"
                     >
-                      <option value="Non-Reader">Non-Reader</option>
-                      <option value="Frustration">Frustration</option>
-                      <option value="Instructional">Instructional</option>
-                      <option value="Independent">Independent</option>
+                      <option value="">Select Phil-IRI category</option>
+                      {PHILIRI_READING_CATEGORIES.map((category) => (
+                        <option key={category.value} value={category.value}>
+                          {category.label}
+                        </option>
+                      ))}
                     </select>
                   </td>
                   {isGradeChairman && (
                     <td>
                       <select
-                        value={st.adviser_id || ""}
+                        value={
+                          otherAdvisers.find((adviser) =>
+                            adviser.assignment_ids.includes(String(st.adviser_id)),
+                          )?.id || st.adviser_id || ""
+                        }
                         onChange={(e) => handleTransfer(st.id, e.target.value)}
                         className="table-select highlight"
                       >
                         {otherAdvisers.map((adv) => (
                           <option key={adv.id} value={adv.id}>
-                            {adv.first_name} {adv.family_name}
+                            {orgAdviserName(adv)}
                           </option>
                         ))}
                       </select>
                     </td>
                   )}
                 </tr>
-              ))
+              })
             )}
           </tbody>
         </table>
@@ -520,19 +592,64 @@ function SearchTab() {
     e.preventDefault();
     if (!searchTerm.trim()) return;
 
-    const { data } = await supabase
-      .from("students")
-      .select("*, portal_profile(first_name, family_name, section_assigned)")
-      .or(`family_name.ilike.%${searchTerm}%,lrn.ilike.%${searchTerm}%`);
+    const [studentResult, orgResult, portalResult, profileResult] = await Promise.all([
+      supabase
+        .from("students")
+        .select("*")
+        .or(`family_name.ilike.%${searchTerm}%,lrn.ilike.%${searchTerm}%`),
+      supabase.from("org_chart").select("*"),
+      supabase.from("portal_profile").select("*"),
+      supabase.from("profiles").select("*"),
+    ]);
 
-    if (data) setResults(data);
+    const orgAdvisers = (orgResult.data || []).filter(isOrgAdviser);
+    const portalProfiles = portalResult.data || [];
+    const legacyProfiles = profileResult.data || [];
+    const data = (studentResult.data || []).map((student) => {
+      const matchedAdviser = orgAdvisers.find((adviser) => {
+        const legacyIds = [
+          ...legacyProfileIdsForOrgAdviser(adviser, portalProfiles),
+          ...legacyProfileIdsForOrgAdviser(adviser, legacyProfiles),
+        ];
+        return learnerBelongsToOrgAdviser(student, adviser, legacyIds);
+      });
+      const adviserProfile = matchedAdviser
+        ? [...portalProfiles, ...legacyProfiles].find(
+            (candidate) =>
+              findOrgAdviserForProfile(candidate, [matchedAdviser])?.id ===
+              matchedAdviser.id,
+          )
+        : null;
+      return {
+        ...student,
+        org_adviser: matchedAdviser,
+        org_adviser_photo:
+          matchedAdviser?.photo_url ||
+          matchedAdviser?.photo ||
+          matchedAdviser?.avatar_url ||
+          matchedAdviser?.profile_picture ||
+          matchedAdviser?.profile_picture_url ||
+          matchedAdviser?.image_url ||
+          matchedAdviser?.image ||
+          adviserProfile?.photo_url ||
+          adviserProfile?.photo ||
+          adviserProfile?.avatar_url ||
+          adviserProfile?.profile_picture ||
+          adviserProfile?.profile_picture_url ||
+          adviserProfile?.image_url ||
+          adviserProfile?.image ||
+          "",
+      };
+    });
+
+    setResults(data);
     setSearched(true);
   };
 
   return (
     <div className="dash-card">
       <div className="dash-card-header">
-        <h2>Search Learner Placement</h2>
+        <h2>Search Learner</h2>
         <p>
           Locate learner information and assigned adviser by Family Name or LRN.
         </p>
@@ -558,20 +675,50 @@ function SearchTab() {
               No learner records matching your search.
             </p>
           ) : (
-            results.map((st) => (
+            results.map((st) => {
+              const photo =
+                st.photo_url ||
+                st.photo ||
+                st.profile_picture ||
+                st.profile_picture_url ||
+                st.avatar_url ||
+                st.image_url ||
+                st.image;
+              const adviserPhoto = st.org_adviser_photo;
+              const adviserGrade = adviserGradeKey(st.org_adviser?.grade_level);
+              const grade = st.org_adviser
+                ? adviserGrade === "0"
+                  ? "Kinder"
+                  : adviserGrade === "SNED"
+                    ? "SNED"
+                    : `Grade ${adviserGrade}`
+                : learnerGradeLabel(st);
+              return (
               <div key={st.id} className="search-item-card">
-                <div className="search-item-main">
+                <div className="search-learner-summary">
+                  {photo ? (
+                    <img
+                      src={photo}
+                      alt={`${learnerDisplayName(st)} profile`}
+                      className="search-learner-photo"
+                    />
+                  ) : (
+                    <div
+                      className="search-learner-photo search-learner-photo-empty"
+                      aria-label="No profile photo"
+                    >
+                      👤
+                    </div>
+                  )}
+                  <div className="search-item-main">
                   <h3>
-                    {st.family_name}, {st.first_name} {st.middle_name}
+                    {learnerDisplayName(st)}
                   </h3>
-                  <p className="lrn-badge">LRN: {st.lrn}</p>
+                  <p className="lrn-badge">LRN: {learnerLrn(st)}</p>
                   <p>
-                    Grade:{" "}
-                    <strong>
-                      {st.grade_level === 0 ? "Kinder" : st.grade_level}
-                    </strong>{" "}
-                    | Gender: <strong>{st.gender}</strong> | Age:{" "}
-                    <strong>{st.age}</strong>
+                    Grade: <strong>{grade}</strong> | Gender:{" "}
+                    <strong>{learnerGenderLabel(st)}</strong> | Age:{" "}
+                    <strong>{learnerAge(st)}</strong>
                   </p>
                   <p className="sub-detail">
                     Address: {st.address} | Contact: {st.contact_number}
@@ -583,23 +730,39 @@ function SearchTab() {
                       st.guardian_name ||
                       "N/A"}
                   </p>
+                  </div>
                 </div>
 
                 <div className="search-item-adviser">
-                  <span className="adv-label">Assigned Adviser</span>
+                  {adviserPhoto ? (
+                    <img
+                      src={adviserPhoto}
+                      alt={`${orgAdviserName(st.org_adviser)} profile`}
+                      className="search-adviser-photo"
+                    />
+                  ) : (
+                    <div
+                      className="search-adviser-photo search-adviser-photo-empty"
+                      aria-label="No adviser profile photo"
+                    >
+                      👤
+                    </div>
+                  )}
+                  <span className="adv-label">Adviser</span>
                   <span className="adv-name">
-                    {st.portal_profile
-                      ? `${st.portal_profile.first_name} ${st.portal_profile.family_name}`
-                      : "Unassigned"}
+                    {st.org_adviser
+                      ? orgAdviserName(st.org_adviser)
+                      : "Unassigned in Org Chart"}
                   </span>
                   <span className="adv-section">
-                    {st.portal_profile?.section_assigned
-                      ? `Section: ${st.portal_profile.section_assigned}`
+                    {st.org_adviser?.section || st.org_adviser?.section_assigned
+                      ? `Section: ${st.org_adviser.section || st.org_adviser.section_assigned}`
                       : ""}
                   </span>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       )}

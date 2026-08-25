@@ -2,6 +2,14 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { QRCodeSVG } from "qrcode.react";
 import idTemplate from "../image/id-template.png";
+import {
+  adviserGradeKey,
+  isOrgAdviser,
+  learnerBelongsToOrgAdviser,
+  legacyProfileIdsForOrgAdviser,
+  orgAdviserName,
+} from "../lib/orgAdvisers";
+import { loadAdvisoryRoster } from "../lib/advisoryRosterData";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const LS_KEY_NAME = "autoid_principal_name";
@@ -44,30 +52,48 @@ function formatName(first, middle, family, suffix) {
   return [f, mi, l, s].filter(Boolean).join(" ");
 }
 function formatGradeSection(rawGrade, rawSection) {
-  const gradeNum = parseInt(rawGrade, 10);
-  const isKinder =
-    rawGrade === 0 ||
-    isNaN(gradeNum) ||
-    String(rawGrade).toUpperCase() === "KINDER";
+  const gradeKey = adviserGradeKey(rawGrade);
+  const gradeNum = /^[1-6]$/.test(gradeKey) ? Number(gradeKey) : null;
+  const isKinder = gradeKey === "0";
   let secStr = String(rawSection || "UNASSIGNED").trim();
   secStr =
-    secStr.replace(/^(GRADE\s*\d+|KINDER)\s*[-–]\s*/i, "").trim() || secStr;
-  return isKinder ? `Kinder - ${secStr}` : `Grade ${gradeNum} - ${secStr}`;
+    secStr.replace(/^(GRADE\s*(?:[1-6]|VI|IV|V|III|II|I)|KINDER)\s*[-–—]\s*/i, "").trim() || secStr;
+  if (isKinder) {
+    const sessionMatch = secStr.match(/\s*[-–—]\s*(MORNING|AFTERNOON)(?:\s+SESSION)?$/i);
+    const session = sessionMatch
+      ? `${sessionMatch[1].charAt(0).toUpperCase()}${sessionMatch[1].slice(1).toLowerCase()} Session`
+      : "";
+    const adviser = sessionMatch
+      ? secStr.slice(0, sessionMatch.index).trim()
+      : secStr;
+    return [`Kinder - ${adviser}`, session].filter(Boolean).join("\n");
+  }
+  if (gradeNum) return `Grade ${gradeNum} - ${secStr}`;
+  const gradeLabel = String(rawGrade || "Grade").trim();
+  return `${gradeLabel} - ${secStr}`;
 }
 function gradeTag(rawGrade) {
-  const gradeNum = parseInt(rawGrade, 10);
-  const isKinder =
-    rawGrade === 0 ||
-    isNaN(gradeNum) ||
-    String(rawGrade).toUpperCase() === "KINDER";
-  return isKinder ? "GK" : `G${gradeNum}`;
+  const gradeKey = adviserGradeKey(rawGrade);
+  if (gradeKey === "0") return "GK";
+  return /^[1-6]$/.test(gradeKey) ? `G${gradeKey}` : "G";
 }
+function learnerNameFontSize(name) {
+  const length = String(name || "").length;
+  if (length > 36) return 11.5;
+  if (length > 26) return 13.5;
+  return 16;
+}
+const CARD_WIDTH = 350;
+// Each half of id-template.png is 768 × 1024 (3:4). Preserve that ratio.
+const CARD_HEIGHT = CARD_WIDTH * (1024 / 768);
+const VERTICAL_SCALE = CARD_HEIGHT / 530;
+
 const ov = (top, left, width, height, extra = {}) => ({
   position: "absolute",
-  top: `${top}px`,
+  top: `${top * VERTICAL_SCALE}px`,
   left: `${left}px`,
   ...(width !== undefined ? { width: `${width}px` } : {}),
-  ...(height !== undefined ? { height: `${height}px` } : {}),
+  ...(height !== undefined ? { height: `${height * VERTICAL_SCALE}px` } : {}),
   ...extra,
 });
 
@@ -80,7 +106,7 @@ function IdCards({ front, back, card }) {
       <div style={card("0px 0px")}>
         {/* Photo */}
         <div
-          style={ov(145, 23, 121, 166, {
+          style={ov(145, 23, 121, 176, {
             borderRadius: "8px",
             overflow: "hidden",
             backgroundColor: "#bbb",
@@ -101,7 +127,7 @@ function IdCards({ front, back, card }) {
         </div>
         {/* LRN */}
         <div
-          style={ov(178, 201, 140, undefined, {
+          style={ov(183, 190, 140, undefined, {
             fontSize: "10px",
             fontWeight: "800",
             color: "#111",
@@ -114,7 +140,7 @@ function IdCards({ front, back, card }) {
         </div>
         {/* Student ID */}
         <div
-          style={ov(210, 229, 110, undefined, {
+          style={ov(217, 229, 110, undefined, {
             fontSize: "9.5px",
             fontWeight: "800",
             color: "#111",
@@ -137,6 +163,7 @@ function IdCards({ front, back, card }) {
             textAlign: "center",
             lineHeight: "1.2",
             padding: "0 4px",
+            whiteSpace: "pre-line",
           })}
         >
           {front.gradeSectionStr}
@@ -147,7 +174,7 @@ function IdCards({ front, back, card }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: front.fullName.length > 22 ? "11px" : "13.5px",
+            fontSize: `${learnerNameFontSize(front.fullName)}px`,
             fontWeight: "900",
             color: "#000",
             textAlign: "center",
@@ -260,10 +287,9 @@ function IdCards({ front, back, card }) {
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────
-// Wallet-size ID: 2.125 × 3.375 in
-// At 96px/in: 204 × 324px
-// Scale factor from design canvas (350×530): 204/350 ≈ 0.5829
-const PRINT_SCALE = 204 / 350;
+// Preserve the PNG's 3:4 ratio at 3.375in high: 2.53125 × 3.375in.
+// Three cards still fit across the 7.9in printable width of folio paper.
+const PRINT_SCALE = 324 / CARD_HEIGHT;
 // Folio @page: 8.5×13in, margin 0.3in → printable 7.9×12.4in
 // 3 cols × 3 rows = 9 IDs per page side
 const IDS_PER_PAGE = 9;
@@ -272,7 +298,7 @@ const IDS_PER_PAGE = 9;
 export function AutoId({ profile }) {
   const [learners, setLearners] = useState([]);
   const [selectedId, setSelectedId] = useState("");
-  const [printMode, setPrintMode] = useState("single"); // "single" | "class" | "all"
+  const [printMode, setPrintMode] = useState("single"); // "single" | "class"
   const [filterAdviser, setFilterAdviser] = useState("");
   const [advisers, setAdvisers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -288,24 +314,86 @@ export function AutoId({ profile }) {
 
   const printRef = useRef(null);
 
-  useEffect(() => { fetchLearners(); }, [profile?.id ?? profile]);
+  useEffect(() => {
+    fetchLearners();
+  }, [profile?.id, profile?.first_name, profile?.family_name, profile?.role]);
 
   const fetchLearners = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("students")
-        .select("*")
-        .order("family_name", { ascending: true });
-      if (!error && data) {
-        setLearners(data);
-        if (data.length > 0) setSelectedId(data[0].id);
-        // Build unique adviser list
-        const advSet = new Map();
-        data.forEach((s) => {
-          if (s.adviser_id) advSet.set(s.adviser_id, s.adviser_id);
-        });
-        setAdvisers([...advSet.keys()]);
+      const [studentResult, orgResult, profileResult, portalResult] = await Promise.all([
+        supabase
+          .from("students")
+          .select("*")
+          .eq("school_id", "126001")
+          .order("family_name", { ascending: true }),
+        supabase.from("org_chart").select("*"),
+        supabase.from("profiles").select("*"),
+        supabase.from("portal_profile").select("*"),
+      ]);
+
+      if (studentResult.error) throw studentResult.error;
+      if (orgResult.error) throw orgResult.error;
+
+      const schoolLearners = studentResult.data || [];
+      const legacyProfiles = [
+        ...(profileResult.data || []),
+        ...(portalResult.data || []),
+      ];
+      const gradeOrder = (value) => {
+        const key = adviserGradeKey(value);
+        return key === "0" ? 0 : key === "SNED" ? 7 : Number(key) || 8;
+      };
+      const orgAdvisers = (orgResult.data || []).filter(isOrgAdviser);
+      const allAdviserRows = orgAdvisers
+        .map((adviser) => {
+          const legacyIds = legacyProfileIdsForOrgAdviser(adviser, legacyProfiles);
+          return {
+            ...adviser,
+            learners: schoolLearners.filter((learner) =>
+              learnerBelongsToOrgAdviser(learner, adviser, legacyIds),
+            ),
+          };
+        })
+        .sort(
+          (left, right) =>
+            gradeOrder(left.grade_level) - gradeOrder(right.grade_level) ||
+            orgAdviserName(left).localeCompare(orgAdviserName(right)),
+        );
+
+      const role = String(profile?.role || "").toLowerCase();
+      let adviserRows = allAdviserRows;
+
+      if (role !== "admin") {
+        const rosterResult = await loadAdvisoryRoster(
+          profile,
+          role === "grade_chairman",
+        );
+        if (rosterResult.error) throw rosterResult.error;
+
+        if (!rosterResult.orgAdviser) {
+          adviserRows = [];
+        } else {
+          adviserRows = [
+            {
+              ...(allAdviserRows.find(
+                (adviser) =>
+                  String(adviser.id) === String(rosterResult.orgAdviser.id),
+              ) || rosterResult.orgAdviser),
+              learners: rosterResult.students,
+            },
+          ];
+        }
+      }
+
+      setLearners(schoolLearners);
+      setAdvisers(adviserRows);
+      if (adviserRows.length > 0) {
+        setFilterAdviser(String(adviserRows[0].id));
+        setSelectedId(adviserRows[0].learners[0]?.id || "");
+      } else {
+        setFilterAdviser("");
+        setSelectedId("");
       }
     } catch (e) {
       console.error(e);
@@ -313,6 +401,17 @@ export function AutoId({ profile }) {
       setLoading(false);
     }
   };
+
+  const selectedAdviser = advisers.find(
+    (adviser) => String(adviser.id) === String(filterAdviser),
+  );
+  const adviserLearners = selectedAdviser?.learners || [];
+
+  useEffect(() => {
+    if (!adviserLearners.some((learner) => String(learner.id) === String(selectedId))) {
+      setSelectedId(adviserLearners[0]?.id || "");
+    }
+  }, [filterAdviser, advisers, selectedId]);
 
   const savePrincipal = () => {
     localStorage.setItem(LS_KEY_NAME, principalName);
@@ -324,16 +423,21 @@ export function AutoId({ profile }) {
   // ── Derived single-learner values ─────────────────────────────────────────
   const idx = learners.findIndex((l) => String(l.id) === String(selectedId));
   const raw = learners[idx] || {};
+  const effectiveGrade =
+    selectedAdviser?.grade_level ||
+    raw.grade_level ||
+    raw.grade ||
+    raw.gradeLevel;
   const enrolledSY = raw.school_year || raw.sy || null;
   const validity =
     deriveValidity(enrolledSY) ||
     `S.Y. ${new Date().getFullYear() - 1} – ${new Date().getFullYear()}`;
   const yearToken = deriveYearToken(enrolledSY);
-  const gt = gradeTag(raw.grade_level);
+  const gt = gradeTag(effectiveGrade);
   const seqNum = String(idx >= 0 ? idx + 1 : 1).padStart(4, "0");
   const studentIdFmt = `${yearToken}-${gt}-${seqNum}`;
   const fullName = formatName(raw.first_name, raw.middle_name, raw.family_name, raw.suffix || raw.name_suffix);
-  const gradeSectionStr = formatGradeSection(raw.grade_level, raw.section);
+  const gradeSectionStr = formatGradeSection(effectiveGrade, raw.section);
   const address = raw.address || "Isabela City, Basilan";
   const guardName = (raw.guardian_name || raw.father_name || raw.mother_name || "N/A").toUpperCase();
   const guardRel = (raw.guardian_relationship || "PARENT/GUARDIAN").toUpperCase();
@@ -351,9 +455,9 @@ export function AutoId({ profile }) {
   const backData = { address, guardName, guardRel, contactNum, qrPayload };
 
   const cardStyle = (bgPos) => ({
-    width: "350px", height: "530px",
+    width: `${CARD_WIDTH}px`, height: `${CARD_HEIGHT}px`,
     backgroundImage: `url(${idTemplate})`,
-    backgroundPosition: bgPos, backgroundSize: "700px 530px",
+    backgroundPosition: bgPos, backgroundSize: `${CARD_WIDTH * 2}px ${CARD_HEIGHT}px`,
     backgroundRepeat: "no-repeat", position: "relative",
     borderRadius: "16px", boxShadow: "0 8px 28px rgba(0,0,0,0.22)",
     overflow: "hidden", flexShrink: 0,
@@ -363,30 +467,35 @@ export function AutoId({ profile }) {
   const buildCardHtml = (templateDataUrl, learnerRaw, learnerIdx, side) => {
     const sy = learnerRaw.school_year || learnerRaw.sy || null;
     const yt = deriveYearToken(sy);
-    const g = gradeTag(learnerRaw.grade_level);
+    const effectiveLearnerGrade =
+      selectedAdviser?.grade_level ||
+      learnerRaw.grade_level ||
+      learnerRaw.grade ||
+      learnerRaw.gradeLevel;
+    const g = gradeTag(effectiveLearnerGrade);
     const seq = String(learnerIdx + 1).padStart(4, "0");
     const idFmt = `${yt}-${g}-${seq}`;
     const fn = formatName(learnerRaw.first_name, learnerRaw.middle_name, learnerRaw.family_name, learnerRaw.suffix || learnerRaw.name_suffix);
-    const gsSec = formatGradeSection(learnerRaw.grade_level, learnerRaw.section);
+    const gsSec = formatGradeSection(effectiveLearnerGrade, learnerRaw.section);
     const addr = learnerRaw.address || "Isabela City, Basilan";
     const gname = (learnerRaw.guardian_name || learnerRaw.father_name || learnerRaw.mother_name || "N/A").toUpperCase();
     const grel = (learnerRaw.guardian_relationship || "PARENT/GUARDIAN").toUpperCase();
     const cnum = learnerRaw.contact_number || "N/A";
     const lrnNum = learnerRaw.lrn || "";
     const photo = learnerRaw.photo_url || null;
-    const nameFs = fn.length > 22 ? `${Math.round(11 * PRINT_SCALE * 100) / 100}px` : `${Math.round(13.5 * PRINT_SCALE * 100) / 100}px`;
+    const nameFs = `${Math.round(learnerNameFontSize(fn) * PRINT_SCALE * 100) / 100}px`;
 
     const S = PRINT_SCALE;
-    const W = Math.round(350 * S);
-    const H = Math.round(530 * S);
+    const W = Math.round(CARD_WIDTH * S);
+    const H = Math.round(CARD_HEIGHT * S);
     const bgPos = side === "front" ? "0px 0px" : `-${W}px 0px`;
-    const bgW = Math.round(700 * S);
-    const bgH = Math.round(530 * S);
+    const bgW = Math.round(CARD_WIDTH * 2 * S);
+    const bgH = Math.round(CARD_HEIGHT * S);
 
     const o = (t, l, w, h, s) =>
-      `position:absolute;top:${Math.round(t*S)}px;left:${Math.round(l*S)}px;` +
+      `position:absolute;top:${Math.round(t*VERTICAL_SCALE*S)}px;left:${Math.round(l*S)}px;` +
       (w !== undefined ? `width:${Math.round(w*S)}px;` : "") +
-      (h !== undefined ? `height:${Math.round(h*S)}px;` : "") + s;
+      (h !== undefined ? `height:${Math.round(h*VERTICAL_SCALE*S)}px;` : "") + s;
 
     const cardBase = `width:${W}px;height:${H}px;background-image:url('${templateDataUrl}');` +
       `background-position:${bgPos};background-size:${bgW}px ${bgH}px;` +
@@ -397,17 +506,17 @@ export function AutoId({ profile }) {
         ? `<img src="${photo}" style="width:100%;height:100%;object-fit:cover;display:block;" />`
         : "";
       return `<div style="${cardBase}">
-        <div style="${o(145,23,121,166,"border-radius:"+Math.round(8*S)+"px;overflow:hidden;background:#bbb;")}">
+        <div style="${o(145,23,121,176,"border-radius:"+Math.round(8*S)+"px;overflow:hidden;background:#bbb;")}">
           ${photoHtml}
         </div>
-        <div style="${o(178,201,140,undefined,"font-size:"+Math.round(10*S)+"px;font-weight:800;color:#111;font-family:monospace;letter-spacing:0.3px;line-height:1;")}">
+        <div style="${o(183,190,140,undefined,"font-size:"+Math.round(10*S)+"px;font-weight:800;color:#111;font-family:monospace;letter-spacing:0.3px;line-height:1;")}">
           ${lrnNum}
         </div>
-        <div style="${o(210,229,110,undefined,"font-size:"+Math.round(9.5*S)+"px;font-weight:800;color:#111;font-family:monospace;white-space:nowrap;line-height:1;")}">
+        <div style="${o(217,229,110,undefined,"font-size:"+Math.round(9.5*S)+"px;font-weight:800;color:#111;font-family:monospace;white-space:nowrap;line-height:1;")}">
           ${idFmt}
         </div>
-        <div style="${o(264,137,182,40,"display:flex;align-items:center;justify-content:center;font-size:"+Math.round(9.5*S)+"px;font-weight:900;color:#7b0000;text-align:center;line-height:1.2;padding:0 "+Math.round(4*S)+"px;")}">
-          ${gsSec}
+        <div style="${o(264,137,182,40,"display:flex;align-items:center;justify-content:center;font-size:"+Math.round(9.5*S)+"px;font-weight:900;color:#7b0000;text-align:center;line-height:1.2;padding:0 "+Math.round(4*S)+"px;white-space:pre-line;")}">
+          ${gsSec.replace(/\n/g, "<br>")}
         </div>
         <div style="${o(358,22,306,37,"display:flex;align-items:center;justify-content:center;font-size:"+nameFs+";font-weight:900;color:#000;text-align:center;letter-spacing:0.3px;line-height:1.1;padding:0 "+Math.round(8*S)+"px;overflow:hidden;")}">
           ${fn}
@@ -453,12 +562,10 @@ export function AutoId({ profile }) {
       return idx >= 0 ? [{ raw, idx }] : [];
     }
     if (printMode === "class" && filterAdviser) {
-      return learners
-        .filter((l) => String(l.adviser_id) === String(filterAdviser))
-        .map((l, i) => ({ raw: l, idx: learners.indexOf(l) }));
-    }
-    if (printMode === "all") {
-      return learners.map((l, i) => ({ raw: l, idx: i }));
+      return adviserLearners.map((learner) => ({
+        raw: learner,
+        idx: learners.findIndex((item) => String(item.id) === String(learner.id)),
+      }));
     }
     return [];
   };
@@ -492,9 +599,9 @@ export function AutoId({ profile }) {
         });
 
       const templateDataUrl = await toDataUrl(idTemplate);
-      const W = Math.round(350 * PRINT_SCALE);
-      const H = Math.round(530 * PRINT_SCALE);
-      const gap = 8; // px between cards
+      const W = Math.round(CARD_WIDTH * PRINT_SCALE);
+      const H = Math.round(CARD_HEIGHT * PRINT_SCALE);
+      const gap = 6; // px between cards
 
       // Build pages: each page holds up to 9 fronts (3×3), then 9 backs (3×3)
       // We interleave: page 1 = fronts of learners 0-8, page 2 = backs of learners 0-8,
@@ -507,13 +614,13 @@ export function AutoId({ profile }) {
         // Fronts page
         let frontsGrid = "";
         chunk.forEach(({ raw: r, idx: i }) => {
-          frontsGrid += `<div style="display:inline-block;margin:${gap/2}px;">${buildCardHtml(templateDataUrl, r, i, "front")}</div>`;
+          frontsGrid += `<div style="display:inline-block;">${buildCardHtml(templateDataUrl, r, i, "front")}</div>`;
         });
 
         // Backs page
         let backsGrid = "";
         chunk.forEach(({ raw: r, idx: i }) => {
-          backsGrid += `<div style="display:inline-block;margin:${gap/2}px;">${buildCardHtml(templateDataUrl, r, i, "back")}</div>`;
+          backsGrid += `<div style="display:inline-block;">${buildCardHtml(templateDataUrl, r, i, "back")}</div>`;
         });
 
         const pageStyle = `width:7.9in;min-height:12.4in;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:0.15in;page-break-after:always;`;
@@ -574,7 +681,7 @@ export function AutoId({ profile }) {
         <div className="dash-card-header">
           <h2>Auto ID Generator</h2>
           <p>
-            Wallet-size IDs (2.125 × 3.375 in) — 9 per folio sheet.
+            PNG-proportional IDs (2.53 × 3.375 in) — 9 per folio sheet.
             For 40 learners: <strong>5 folio sheets</strong> (front + back pages per batch).
           </p>
         </div>
@@ -587,7 +694,6 @@ export function AutoId({ profile }) {
               {[
                 { v: "single", label: "🔖 Single Learner" },
                 { v: "class",  label: "📋 By Class / Adviser" },
-                { v: "all",    label: "🏫 All Learners" },
               ].map(({ v, label }) => (
                 <label key={v} style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "0.86rem", fontWeight: "600", color: printMode === v ? "#7b1a1a" : "#444" }}>
                   <input type="radio" name="printMode" value={v} checked={printMode === v} onChange={() => setPrintMode(v)} />
@@ -597,45 +703,44 @@ export function AutoId({ profile }) {
             </div>
           </div>
 
+          {/* ── Org Chart adviser ── */}
+          <div>
+            <label className="adv-label">Adviser / Class</label>
+            <select
+              className="table-select"
+              style={{ width: "100%", padding: "8px" }}
+              value={filterAdviser}
+              onChange={(e) => setFilterAdviser(e.target.value)}
+            >
+              {advisers.length === 0 && <option value="">No Org Chart advisers found</option>}
+              {advisers.map((adviser) => {
+                const grade = adviserGradeKey(adviser.grade_level);
+                const gradeLabel = grade === "0" ? "Kinder" : grade === "SNED" ? "SNED" : `Grade ${grade}`;
+                return (
+                  <option key={adviser.id} value={adviser.id}>
+                    {gradeLabel} — {orgAdviserName(adviser)} — {adviser.learners.length} learner{adviser.learners.length !== 1 ? "s" : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
           {/* ── Learner select (single mode) ── */}
           {printMode === "single" && (
             <div>
-              <label className="adv-label">Select Learner</label>
+              <label className="adv-label">Learners under this adviser</label>
               <select
                 className="table-select"
                 style={{ width: "100%", padding: "8px" }}
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
               >
-                {learners.length === 0 && <option value="">No learners found</option>}
-                {learners.map((st) => (
+                {adviserLearners.length === 0 && <option value="">No learners assigned to this adviser</option>}
+                {adviserLearners.map((st) => (
                   <option key={st.id} value={st.id}>
                     {st.family_name}, {st.first_name} — {st.lrn || "No LRN"}
                   </option>
                 ))}
-              </select>
-            </div>
-          )}
-
-          {/* ── Adviser filter (class mode) ── */}
-          {printMode === "class" && (
-            <div>
-              <label className="adv-label">Filter by Adviser / Class</label>
-              <select
-                className="table-select"
-                style={{ width: "100%", padding: "8px" }}
-                value={filterAdviser}
-                onChange={(e) => setFilterAdviser(e.target.value)}
-              >
-                <option value="">-- Select Adviser --</option>
-                {advisers.map((aid) => {
-                  const count = learners.filter((l) => String(l.adviser_id) === String(aid)).length;
-                  return (
-                    <option key={aid} value={aid}>
-                      Adviser ID: {aid} — {count} learner{count !== 1 ? "s" : ""}
-                    </option>
-                  );
-                })}
               </select>
             </div>
           )}
