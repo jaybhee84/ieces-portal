@@ -356,11 +356,13 @@ function RegisterForm({ onGoLogin }) {
 
     setLoading(true);
 
-    const { data: allowed, error: allowErr } = await supabase
-      .from("portal_allowed_users")
-      .select("email")
-      .eq("email", form.email.trim().toLowerCase())
-      .single();
+    const { data: allowed, error: allowErr } = await supabase.rpc(
+      "is_app_email_allowed",
+      {
+        app_key: "portal",
+        candidate_email: form.email.trim().toLowerCase(),
+      },
+    );
 
     if (allowErr || !allowed) {
       setError("Email not authorized to register. Contact your administrator.");
