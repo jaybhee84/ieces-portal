@@ -238,26 +238,61 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
     try {
       const identifier = username.trim().toLowerCase();
       let loginEmail = identifier;
-      if (!identifier.includes("@")) {
-        let { data: profile, error: profileErr } = await supabase
+      let profile = null;
+      let profileErr = null;
+      let ownerFallback = false;
+
+      if (identifier.includes("@")) {
+        const profileResult = await supabase
           .from("portal_profile")
-          .select("email")
+          .select("auth_email, email, username")
+          .eq("email", identifier)
+          .maybeSingle();
+        profile = profileResult.data;
+        profileErr = profileResult.error;
+      } else {
+        const profileResult = await supabase
+          .from("portal_profile")
+          .select("auth_email, email, username")
           .eq("username", identifier)
           .maybeSingle();
+        profile = profileResult.data;
+        profileErr = profileResult.error;
+
         if (!profile && identifier === "admin") {
           const { data: ownerEmail, error: ownerError } = await supabase.rpc(
             "dashboard_login_email",
             { candidate_username: identifier },
           );
-          profile = ownerEmail ? { email: ownerEmail } : null;
+          profile = ownerEmail
+            ? { auth_email: null, email: ownerEmail, username: "admin" }
+            : null;
           profileErr = ownerError;
+          ownerFallback = Boolean(ownerEmail);
         }
+
         if (profileErr || !profile) {
           setError("Username not found.");
           setLoading(false);
           return;
         }
-        loginEmail = profile.email;
+      }
+
+      if (profile) {
+        loginEmail = profile.auth_email || profile.email;
+      }
+
+      const { data: allowed, error: allowErr } = profile
+        ? await supabase.rpc("is_app_email_allowed", {
+            app_key: "portal",
+            candidate_email: profile.email.trim().toLowerCase(),
+          })
+        : { data: null, error: null };
+
+      if (profile && !ownerFallback && (allowErr || !allowed)) {
+        setError("Your email is not authorized to access IECES Portal.");
+        setLoading(false);
+        return;
       }
 
       const { data: authData, error: authErr } =
@@ -378,11 +413,13 @@ function RegisterForm({ onGoLogin }) {
 
     setLoading(true);
 
+    const normalizedEmail = form.email.trim().toLowerCase();
+
     const { data: allowed, error: allowErr } = await supabase.rpc(
       "is_app_email_allowed",
       {
         app_key: "portal",
-        candidate_email: form.email.trim().toLowerCase(),
+        candidate_email: normalizedEmail,
       },
     );
 
@@ -396,7 +433,7 @@ function RegisterForm({ onGoLogin }) {
       .from("portal_profile")
       .select("username")
       .eq("username", form.username.trim())
-      .single();
+      .maybeSingle();
 
     if (existingUser) {
       setError("Username is already taken.");
@@ -404,26 +441,38 @@ function RegisterForm({ onGoLogin }) {
       return;
     }
 
-    const { error: authErr } = await supabase.auth.signUp({
-      email: form.email.trim().toLowerCase(),
-      password: form.password,
-      options: {
-        data: {
-          app_source: "ieces_portal",
+    // Register through the server so the approved real email receives a
+    // separate Portal-only Auth identity and password.
+    const { data: fnData, error: fnErr } = await supabase.functions.invoke(
+      "portal-register",
+      {
+        body: {
+          email: normalizedEmail,
+          password: form.password,
           username: form.username.trim(),
           family_name: form.familyName.trim().toUpperCase(),
           first_name: form.firstName.trim().toUpperCase(),
-          middle_initial: form.middleInitial.trim().toUpperCase() || null,
+          middle_initial:
+            form.middleInitial.trim().toUpperCase() || null,
         },
       },
-    });
+    );
 
-    if (authErr) {
-      if (authErr.message?.toLowerCase().includes("already registered")) {
-        setError("This email is already registered. Please sign in instead.");
-      } else {
-        setError(authErr.message);
+    if (fnErr || fnData?.error) {
+      let functionMessage = fnData?.error;
+
+      if (!functionMessage && fnErr?.context?.json) {
+        try {
+          const errorBody = await fnErr.context.json();
+          functionMessage = errorBody?.error;
+        } catch {
+          // Fall back to the function client message below.
+        }
       }
+
+      setError(
+        functionMessage || fnErr?.message || "Registration failed.",
+      );
       setLoading(false);
       return;
     }

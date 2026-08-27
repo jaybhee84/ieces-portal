@@ -6,6 +6,7 @@ begin;
 create table if not exists public.portal_profile (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null,
+  auth_email text not null,
   username text not null,
   family_name text not null,
   first_name text not null,
@@ -20,6 +21,7 @@ create table if not exists public.portal_profile (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint portal_profile_email_key unique (email),
+  constraint portal_profile_auth_email_key unique (auth_email),
   constraint portal_profile_username_key unique (username)
 );
 
@@ -34,9 +36,10 @@ begin
   -- Ignore Auth accounts created by other apps sharing this Supabase project.
   if new.raw_user_meta_data ->> 'app_source' = 'ieces_portal' then
     insert into public.portal_profile (
-      id, email, username, family_name, first_name, middle_initial
+      id, email, auth_email, username, family_name, first_name, middle_initial
     ) values (
       new.id,
+      lower(new.email),
       lower(new.email),
       trim(new.raw_user_meta_data ->> 'username'),
       upper(trim(new.raw_user_meta_data ->> 'family_name')),

@@ -217,9 +217,31 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         .eq("id", currentUserId)
         .single();
 
-      if (!error && data) {
-        setProfile(data);
+      if (error || !data) {
+        // A valid Supabase session from another IECES app is authentication,
+        // but it is not authorization to use Portal.
+        if (typeof onLogout === "function") {
+          await onLogout();
+        }
+        return;
       }
+
+      const { data: allowed, error: allowError } = await supabase.rpc(
+        "is_app_email_allowed",
+        {
+          app_key: "portal",
+          candidate_email: data.email.trim().toLowerCase(),
+        },
+      );
+
+      if (allowError || !allowed) {
+        if (typeof onLogout === "function") {
+          await onLogout();
+        }
+        return;
+      }
+
+      setProfile(data);
     } catch (err) {
       console.error("Error fetching user profile:", err);
     } finally {

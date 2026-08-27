@@ -13,6 +13,7 @@ dist/
 dist-electron/
 build/
 out/
+supabase/.temp/
 
 # Log files
 npm-debug.log*
