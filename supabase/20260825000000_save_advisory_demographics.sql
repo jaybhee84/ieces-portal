@@ -1,5 +1,5 @@
 -- Run this in the Supabase SQL Editor for the shared IECES project.
--- It lets a signed-in Portal adviser save Religion, Tribe, Address, and Phil-IRI category
+-- It lets a signed-in Portal adviser save LRN, Religion, Tribe, Address, and Phil-IRI category
 -- for learners in the adviser's Org Chart class. The function is intentionally
 -- narrower than granting unrestricted UPDATE access on public.students.
 
@@ -28,9 +28,19 @@ begin
     raise exception 'p_updates must be a JSON array';
   end if;
 
+  if exists (
+    select 1
+    from jsonb_array_elements(coalesce(p_updates, '[]'::jsonb)) as item
+    where nullif(trim(item ->> 'lrn'), '') is not null
+      and trim(item ->> 'lrn') !~ '^[0-9]{12}$'
+  ) then
+    raise exception 'LRN must contain exactly 12 digits';
+  end if;
+
   with requested as (
     select
       nullif(trim(item ->> 'id'), '') as id,
+      nullif(trim(item ->> 'lrn'), '') as lrn,
       nullif(trim(item ->> 'religion'), '') as religion,
       nullif(trim(item ->> 'tribe'), '') as tribe,
       nullif(trim(item ->> 'address'), '') as address,
@@ -88,6 +98,7 @@ begin
   )
   update public.students as learner
   set
+    lrn = permitted.lrn,
     religion = permitted.religion,
     tribe = permitted.tribe,
     address = permitted.address,
@@ -106,6 +117,6 @@ revoke all on function public.save_advisory_demographics(jsonb) from anon;
 grant execute on function public.save_advisory_demographics(jsonb) to authenticated;
 
 comment on function public.save_advisory_demographics(jsonb) is
-  'Safely updates Religion, Tribe, Address, and Phil-IRI category for learners in the signed-in Portal adviser class.';
+  'Safely updates LRN, Religion, Tribe, Address, and Phil-IRI category for learners in the signed-in Portal adviser class.';
 
 commit;

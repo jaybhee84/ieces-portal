@@ -259,6 +259,8 @@
     position: sticky;
     top: 0;
     z-index: 15;
+    text-align: center;
+    vertical-align: middle;
 }
 
 .advisory-roster-scroll .dash-table th:first-child {
@@ -348,6 +350,30 @@
     border-radius: 6px;
     border: 1px solid #e8ddd8;
     font-size: 0.78rem;
+}
+
+.advisory-lrn-input {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid #d8c9c3;
+    border-radius: 6px;
+    background: #fff;
+    color: #1a0a0a;
+    pointer-events: auto;
+    user-select: text;
+}
+
+.advisory-lrn-input:focus {
+    outline: none;
+    border-color: #7b1a1a;
+    box-shadow: 0 0 0 2px rgba(123, 26, 26, 0.14);
+}
+
+.advisory-lrn-input:disabled {
+    background: #f1f5f9;
+    cursor: wait;
 }
 
 .table-select.highlight {

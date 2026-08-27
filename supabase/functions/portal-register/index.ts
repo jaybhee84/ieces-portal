@@ -93,7 +93,7 @@ Deno.serve(async (request: Request) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const normalizedUsername = username.trim();
+    const normalizedUsername = username.trim().toLowerCase();
 
     // This app's allowlist is maintained by IECES Dashboard Manager.
     const { data: allowed, error: allowedError } = await supabaseAdmin.rpc(
@@ -118,7 +118,7 @@ Deno.serve(async (request: Request) => {
       supabaseAdmin
         .from("portal_profile")
         .select("id")
-        .eq("email", normalizedEmail)
+        .eq("real_email", normalizedEmail)
         .maybeSingle(),
       supabaseAdmin
         .from("portal_profile")
@@ -144,6 +144,7 @@ Deno.serve(async (request: Request) => {
     const authEmail = await portalAuthEmail(normalizedEmail);
     const existingAuthUser = await findAuthUserByEmail(authEmail);
     let authUserId: string;
+    let createdAuthUser = false;
 
     if (existingAuthUser) {
       // Recover safely if Auth creation succeeded during an earlier request but
@@ -183,6 +184,7 @@ Deno.serve(async (request: Request) => {
       }
 
       authUserId = newUser.user.id;
+      createdAuthUser = true;
     }
 
     const { error: insertError } = await supabaseAdmin
@@ -190,6 +192,7 @@ Deno.serve(async (request: Request) => {
       .insert({
         id: authUserId,
         email: normalizedEmail,
+        real_email: normalizedEmail,
         auth_email: authEmail,
         username: normalizedUsername,
         family_name: family_name.trim().toUpperCase(),
@@ -198,6 +201,9 @@ Deno.serve(async (request: Request) => {
       });
 
     if (insertError) {
+      if (createdAuthUser) {
+        await supabaseAdmin.auth.admin.deleteUser(authUserId);
+      }
       return json(500, { error: insertError.message });
     }
 

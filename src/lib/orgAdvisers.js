@@ -164,7 +164,6 @@ export const learnerBelongsToOrgAdviser = (
     adviser.section || adviser.section_assigned,
   );
   return (
-    !learner.adviser_id &&
     Boolean(adviserSection) &&
     normalizedName(learner.section || learner.section_assigned) === adviserSection
   );

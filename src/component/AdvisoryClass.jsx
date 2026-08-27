@@ -9,7 +9,6 @@ import {
   learnerDisplayName,
   learnerGenderLabel,
   learnerGradeLabel,
-  learnerLrn,
   learnerNutrition,
   nutritionBadgeClass,
 } from "../lib/learnerRoster";
@@ -43,8 +42,6 @@ export function AdvisoryClass({ profile }) {
   const [dirtyStudentIds, setDirtyStudentIds] = useState([]);
   const [savingDemographics, setSavingDemographics] = useState(false);
 
-  const isGradeChairman = profile?.role === "grade_chairman";
-
   useEffect(() => {
     fetchStudents();
 
@@ -67,9 +64,24 @@ export function AdvisoryClass({ profile }) {
       )
       .subscribe();
 
+    const profileChannel = supabase
+      .channel(`advisory_profile_sync:${profile?.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "portal_profile",
+          filter: `id=eq.${profile?.id}`,
+        },
+        () => fetchStudents(),
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(orgChannel);
+      supabase.removeChannel(profileChannel);
     };
   }, [profile]);
 
@@ -80,7 +92,7 @@ export function AdvisoryClass({ profile }) {
     }
 
     setLoading(true);
-    const result = await loadAdvisoryRoster(profile, isGradeChairman);
+    const result = await loadAdvisoryRoster(profile);
     setOrgAdviser(result.orgAdviser);
     const sortedStudents = [...result.students].sort((left, right) => {
       const genderRank = (student) => {
@@ -102,6 +114,8 @@ export function AdvisoryClass({ profile }) {
           return [
             String(student.id),
             {
+              lrn:
+                student.lrn && student.lrn !== "—" ? String(student.lrn) : "",
               religion: student.religion || "",
               tribe: student.tribe || "",
               barangay: barangay === "—" ? "" : barangay,
@@ -131,6 +145,14 @@ export function AdvisoryClass({ profile }) {
 
   const saveDemographicChanges = async () => {
     if (!dirtyStudentIds.length) return;
+    const invalidLrn = dirtyStudentIds.find((studentId) => {
+      const lrn = String(demographicDrafts[studentId]?.lrn || "").trim();
+      return lrn && !/^\d{12}$/.test(lrn);
+    });
+    if (invalidLrn) {
+      setMessage("LRN must contain exactly 12 digits, or be left blank.");
+      return;
+    }
     setSavingDemographics(true);
     setMessage("");
 
@@ -141,12 +163,22 @@ export function AdvisoryClass({ profile }) {
         const draft = demographicDrafts[studentId];
         return {
           id: studentId,
+          lrn: draft?.lrn?.trim() || null,
           religion: draft?.religion || null,
           tribe: draft?.tribe || null,
           address: addressWithBarangay(student?.address, draft?.barangay),
           reading_category: draft?.reading_category || null,
         };
       });
+
+    const { error: lrnError } = await supabase.rpc("save_advisory_lrns", {
+      p_updates: updates.map(({ id, lrn }) => ({ id, lrn })),
+    });
+    if (lrnError) {
+      setMessage(`Failed to save LRN: ${lrnError.message}`);
+      setSavingDemographics(false);
+      return;
+    }
 
     const { data: savedCount, error } = await supabase.rpc(
       "save_advisory_demographics",
@@ -186,9 +218,8 @@ export function AdvisoryClass({ profile }) {
     <div className="dash-card">
       <div className="dash-card-header">
         <h2>
-          {isGradeChairman
-            ? `Grade ${profile?.grade_level_assigned} — All Sections`
-            : `Advisory Class — ${orgAdviser ? orgAdviserName(orgAdviser) : "Not linked in Org Chart"}`}
+          Advisory Class —{" "}
+          {orgAdviser ? orgAdviserName(orgAdviser) : "Not linked in Org Chart"}
         </h2>
         <p>
           Total: {students.length} Learners &nbsp;|&nbsp; Male: {maleCount}{" "}
@@ -322,7 +353,31 @@ export function AdvisoryClass({ profile }) {
                           </div>
                         )}
                       </td>
-                      <td className="font-mono whitespace-nowrap">{learnerLrn(st)}</td>
+                      <td>
+                        <input
+                          key={`${st.id}:${st.lrn || ""}`}
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={12}
+                          defaultValue={draft.lrn || ""}
+                          onInput={(event) => {
+                            const numericLrn = event.currentTarget.value
+                              .replace(/\D/g, "")
+                              .slice(0, 12);
+                            event.currentTarget.value = numericLrn;
+                            updateDemographicDraft(
+                              st.id,
+                              "lrn",
+                              numericLrn,
+                            );
+                          }}
+                          disabled={savingDemographics}
+                          autoComplete="off"
+                          placeholder="12-digit LRN"
+                          aria-label={`LRN for ${learnerDisplayName(st)}`}
+                          className="advisory-lrn-input min-w-[130px] font-mono"
+                        />
+                      </td>
                       <td className="whitespace-nowrap font-semibold">{learnerGradeLabel(st)}</td>
                       <td className="font-semibold">{learnerGenderLabel(st)}</td>
                       <td className="whitespace-nowrap">{displayBirthdate(st.birthdate)}</td>

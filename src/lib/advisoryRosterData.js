@@ -18,6 +18,7 @@ const fetchAllSchoolLearners = async () => {
       .select("*")
       .eq("school_id", IECES_SCHOOL_ID)
       .order("family_name", { ascending: true })
+      .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if (result.error) return { data: [], error: result.error };
     learners.push(...(result.data || []));
@@ -26,7 +27,7 @@ const fetchAllSchoolLearners = async () => {
   return { data: learners, error: null };
 };
 
-export const loadAdvisoryRoster = async (profile, isGradeChairman = false) => {
+export const loadAdvisoryRoster = async (profile) => {
   if (!profile?.id) {
     return { students: [], orgAdviser: null, orgAdvisers: [], error: null };
   }
@@ -46,23 +47,6 @@ export const loadAdvisoryRoster = async (profile, isGradeChairman = false) => {
 
   if (error) {
     return { students: [], orgAdviser, orgAdvisers, error };
-  }
-
-  if (isGradeChairman) {
-    const grade = adviserGradeKey(
-      orgAdviser?.grade_level || profile.grade_level_assigned,
-    );
-    return {
-      students: schoolLearners.filter(
-        (learner) =>
-          adviserGradeKey(
-            learner.grade_level || learner.grade || learner.section,
-          ) === grade,
-      ),
-      orgAdviser,
-      orgAdvisers,
-      error: null,
-    };
   }
 
   if (!orgAdviser) {

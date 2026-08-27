@@ -3,10 +3,12 @@ import { supabase } from "../lib/supabase";
 import {
   adviserGradeKey,
   isOrgAdviser,
-  legacyProfileIdsForOrgAdviser,
   orgAdviserName,
 } from "../lib/orgAdvisers";
-import { learnerDisplayName } from "../lib/learnerRoster";
+import {
+  learnerDisplayName,
+  learnerGenderLabel,
+} from "../lib/learnerRoster";
 
 export function TransferLearner({ profile }) {
   const gradeLevel = profile?.grade_level_assigned;
@@ -24,16 +26,26 @@ export function TransferLearner({ profile }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
+  const fetchAdviserStudents = async (adviserId) => {
+    const adviser = advisers.find(
+      (item) => String(item.id) === String(adviserId),
+    );
+    if (!adviser) return { data: [], error: null };
+
+    const result = await supabase.rpc("get_chairman_advisory_learners", {
+      candidate_adviser_id: String(adviser.id),
+    });
+    if (result.error) return result;
+
+    return { data: result.data || [], error: null };
+  };
+
   // Fetch advisers for the chairman's assigned grade level
   useEffect(() => {
     if (!gradeLevel) return;
 
     const fetchAdvisers = async () => {
-      const [orgResult, profileResult, legacyProfileResult] = await Promise.all([
-        supabase.from("org_chart").select("*"),
-        supabase.from("portal_profile").select("*"),
-        supabase.from("profiles").select("*"),
-      ]);
+      const orgResult = await supabase.from("org_chart").select("*");
       const { data, error } = orgResult;
 
       if (!error && data) {
@@ -47,20 +59,7 @@ export function TransferLearner({ profile }) {
             .sort((left, right) =>
               orgAdviserName(left).localeCompare(orgAdviserName(right)),
             )
-            .map((adviser) => ({
-              ...adviser,
-              assignment_ids: [
-                String(adviser.id),
-                ...legacyProfileIdsForOrgAdviser(
-                  adviser,
-                  profileResult.data || [],
-                ),
-                ...legacyProfileIdsForOrgAdviser(
-                  adviser,
-                  legacyProfileResult.data || [],
-                ),
-              ],
-            })),
+            .map((adviser) => ({ ...adviser })),
         );
       }
     };
@@ -77,15 +76,9 @@ export function TransferLearner({ profile }) {
 
     const fetchLeftStudents = async () => {
       setLoading(true);
-      const adviser = advisers.find(
-        (item) => String(item.id) === String(leftAdviserId),
-      );
-      const { data } = await supabase
-        .from("students")
-        .select("*")
-        .in("adviser_id", adviser?.assignment_ids || [leftAdviserId]);
-
+      const { data, error } = await fetchAdviserStudents(leftAdviserId);
       setLeftStudents(data || []);
+      if (error) setMessage(`Could not load the source class: ${error.message}`);
       setLoading(false);
     };
 
@@ -101,15 +94,9 @@ export function TransferLearner({ profile }) {
 
     const fetchRightStudents = async () => {
       setLoading(true);
-      const adviser = advisers.find(
-        (item) => String(item.id) === String(rightAdviserId),
-      );
-      const { data } = await supabase
-        .from("students")
-        .select("*")
-        .in("adviser_id", adviser?.assignment_ids || [rightAdviserId]);
-
+      const { data, error } = await fetchAdviserStudents(rightAdviserId);
       setRightStudents(data || []);
+      if (error) setMessage(`Could not load the destination class: ${error.message}`);
       setLoading(false);
     };
 
@@ -123,11 +110,11 @@ export function TransferLearner({ profile }) {
     );
 
     const males = activeList
-      .filter((s) => s.gender?.toLowerCase() === "male")
+      .filter((s) => learnerGenderLabel(s) === "Male")
       .sort((a, b) => (a.family_name || "").localeCompare(b.family_name || ""));
 
     const females = activeList
-      .filter((s) => s.gender?.toLowerCase() === "female")
+      .filter((s) => learnerGenderLabel(s) === "Female")
       .sort((a, b) => (a.family_name || "").localeCompare(b.family_name || ""));
 
     return { males, females };
@@ -152,10 +139,11 @@ export function TransferLearner({ profile }) {
     try {
       for (const studentId of studentIds) {
         const targetAdviserId = pendingTransfers[studentId];
-        await supabase
+        const { error } = await supabase
           .from("students")
           .update({ adviser_id: targetAdviserId })
           .eq("id", studentId);
+        if (error) throw error;
       }
 
       setMessage("Transfers saved successfully!");
@@ -163,24 +151,12 @@ export function TransferLearner({ profile }) {
 
       // Refresh both class lists
       if (leftAdviserId) {
-        const leftAdviser = advisers.find(
-          (item) => String(item.id) === String(leftAdviserId),
-        );
-        const { data: leftData } = await supabase
-          .from("students")
-          .select("*")
-          .in("adviser_id", leftAdviser?.assignment_ids || [leftAdviserId]);
+        const { data: leftData } = await fetchAdviserStudents(leftAdviserId);
         setLeftStudents(leftData || []);
       }
 
       if (rightAdviserId) {
-        const rightAdviser = advisers.find(
-          (item) => String(item.id) === String(rightAdviserId),
-        );
-        const { data: rightData } = await supabase
-          .from("students")
-          .select("*")
-          .in("adviser_id", rightAdviser?.assignment_ids || [rightAdviserId]);
+        const { data: rightData } = await fetchAdviserStudents(rightAdviserId);
         setRightStudents(rightData || []);
       }
     } catch (err) {
@@ -213,6 +189,26 @@ export function TransferLearner({ profile }) {
   const rightSorted = getSortedLearners(rightDisplayList);
 
   const pendingCount = Object.keys(pendingTransfers).length;
+  const pendingDetails = Object.entries(pendingTransfers).map(
+    ([studentId, targetAdviserId]) => {
+      const learner = [...leftStudents, ...rightStudents].find(
+        (student) => String(student.id) === String(studentId),
+      );
+      const cameFromLeft = leftStudents.some(
+        (student) => String(student.id) === String(studentId),
+      );
+      const sourceAdviser = advisers.find(
+        (adviser) =>
+          String(adviser.id) ===
+          String(cameFromLeft ? leftAdviserId : rightAdviserId),
+      );
+      const targetAdviser = advisers.find(
+        (adviser) => String(adviser.id) === String(targetAdviserId),
+      );
+
+      return { studentId, learner, sourceAdviser, targetAdviser };
+    },
+  );
 
   return (
     <div className="dash-card">
@@ -271,6 +267,55 @@ export function TransferLearner({ profile }) {
           direction="left"
         />
       </div>
+
+      {pendingDetails.length > 0 && (
+        <div className="mt-6 border border-blue-200 rounded-lg overflow-hidden">
+          <div className="bg-blue-50 px-4 py-3 border-b border-blue-200">
+            <h3 className="text-sm font-extrabold text-blue-900">
+              Staged Learner Transfers
+            </h3>
+            <p className="text-xs text-blue-700 mt-0.5">
+              Review each destination before saving.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 text-slate-700 uppercase">
+                <tr>
+                  <th className="p-3 border-b border-slate-200">Learner</th>
+                  <th className="p-3 border-b border-slate-200">
+                    Current Advisory
+                  </th>
+                  <th className="p-3 border-b border-slate-200">
+                    Transfer To
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingDetails.map(
+                  ({ studentId, learner, sourceAdviser, targetAdviser }) => (
+                    <tr key={studentId} className="border-b border-slate-100">
+                      <td className="p-3 font-bold text-slate-900">
+                        {learner ? learnerDisplayName(learner) : "Unknown learner"}
+                      </td>
+                      <td className="p-3 text-slate-700">
+                        {sourceAdviser
+                          ? orgAdviserName(sourceAdviser)
+                          : "Unknown advisory"}
+                      </td>
+                      <td className="p-3 font-bold text-blue-700">
+                        {targetAdviser
+                          ? orgAdviserName(targetAdviser)
+                          : "Unknown advisory"}
+                      </td>
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* SAVE TRANSFERS FOOTER BAR */}
       <div className="mt-8 pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4 bg-slate-50 p-4 rounded-lg">

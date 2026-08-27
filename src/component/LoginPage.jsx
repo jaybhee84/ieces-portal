@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import {
+  PORTAL_APP_KEY,
+  resolvePortalLogin,
+  validatePortalSession,
+} from "../lib/portalAuth";
 import iecesLogo from "../image/ieceslogo.png";
 import "../styles/LoginPage.css";
 
@@ -237,83 +242,57 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
 
     try {
       const identifier = username.trim().toLowerCase();
-      let loginEmail = identifier;
-      let profile = null;
-      let profileErr = null;
-      let ownerFallback = false;
+      let { data: profile, error: profileErr } =
+        await resolvePortalLogin(identifier);
 
-      if (identifier.includes("@")) {
-        const profileResult = await supabase
-          .from("portal_profile")
-          .select("auth_email, email, username")
-          .eq("email", identifier)
-          .maybeSingle();
-        profile = profileResult.data;
-        profileErr = profileResult.error;
-      } else {
-        const profileResult = await supabase
-          .from("portal_profile")
-          .select("auth_email, email, username")
-          .eq("username", identifier)
-          .maybeSingle();
-        profile = profileResult.data;
-        profileErr = profileResult.error;
-
-        if (!profile && identifier === "admin") {
-          const { data: ownerEmail, error: ownerError } = await supabase.rpc(
-            "dashboard_login_email",
-            { candidate_username: identifier },
-          );
-          profile = ownerEmail
-            ? { auth_email: null, email: ownerEmail, username: "admin" }
-            : null;
+      // The protected Dashboard owner keeps the existing shared Auth identity.
+      if (!profile) {
+        const { data: ownerEmail, error: ownerError } = await supabase.rpc(
+          "dashboard_login_email",
+          { candidate_username: "admin" },
+        );
+        const ownerMatches =
+          ownerEmail &&
+          (identifier === "admin" || identifier === ownerEmail.toLowerCase());
+        if (ownerMatches) {
+          profile = { auth_email: ownerEmail, real_email: ownerEmail };
           profileErr = ownerError;
-          ownerFallback = Boolean(ownerEmail);
-        }
-
-        if (profileErr || !profile) {
-          setError("Username not found.");
-          setLoading(false);
-          return;
         }
       }
 
-      if (profile) {
-        loginEmail = profile.auth_email || profile.email;
+      if (profileErr || !profile) {
+        setError("Portal account not found.");
+        return;
       }
 
-      const { data: allowed, error: allowErr } = profile
-        ? await supabase.rpc("is_app_email_allowed", {
-            app_key: "portal",
-            candidate_email: profile.email.trim().toLowerCase(),
-          })
-        : { data: null, error: null };
+      const { data: allowed, error: allowErr } = await supabase.rpc(
+        "is_app_email_allowed",
+        {
+          app_key: PORTAL_APP_KEY,
+          candidate_email: profile.real_email,
+        },
+      );
 
-      if (profile && !ownerFallback && (allowErr || !allowed)) {
+      if (allowErr || !allowed) {
         setError("Your email is not authorized to access IECES Portal.");
-        setLoading(false);
         return;
       }
 
       const { data: authData, error: authErr } =
         await supabase.auth.signInWithPassword({
-          email: loginEmail,
+          email: profile.auth_email,
           password,
         });
 
       if (authErr) {
         setError(authErr.message);
-        setLoading(false);
         return;
       }
 
-      const { error: ownerAccessError } = await supabase.rpc(
-        "ensure_owner_app_access",
-        { app_key: "portal" },
-      );
-      if (ownerAccessError) {
+      const access = await validatePortalSession(authData.session);
+      if (!access.valid) {
         await supabase.auth.signOut();
-        setError("Could not verify application access. Please try again.");
+        setError(access.error);
         return;
       }
 
@@ -418,25 +397,13 @@ function RegisterForm({ onGoLogin }) {
     const { data: allowed, error: allowErr } = await supabase.rpc(
       "is_app_email_allowed",
       {
-        app_key: "portal",
+        app_key: PORTAL_APP_KEY,
         candidate_email: normalizedEmail,
       },
     );
 
     if (allowErr || !allowed) {
       setError("Email not authorized to register. Contact your administrator.");
-      setLoading(false);
-      return;
-    }
-
-    const { data: existingUser } = await supabase
-      .from("portal_profile")
-      .select("username")
-      .eq("username", form.username.trim())
-      .maybeSingle();
-
-    if (existingUser) {
-      setError("Username is already taken.");
       setLoading(false);
       return;
     }
@@ -470,9 +437,38 @@ function RegisterForm({ onGoLogin }) {
         }
       }
 
-      setError(
-        functionMessage || fnErr?.message || "Registration failed.",
-      );
+      const unavailable =
+        fnErr &&
+        (fnErr?.context?.status === 404 ||
+          /function[^.]*not found|not found[^.]*function/i.test(
+            fnErr?.message || "",
+          ));
+
+      // Keep the prior signup flow usable while the function/migration rollout
+      // is still pending. Remove this branch after production deployment.
+      if (unavailable) {
+        const { error: legacyError } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password: form.password,
+          options: {
+            data: {
+              app_source: "ieces_portal",
+              username: form.username.trim().toLowerCase(),
+              family_name: form.familyName.trim().toUpperCase(),
+              first_name: form.firstName.trim().toUpperCase(),
+              middle_initial: form.middleInitial.trim().toUpperCase() || null,
+            },
+          },
+        });
+        if (!legacyError) {
+          setSuccess(true);
+          setLoading(false);
+          return;
+        }
+        functionMessage = legacyError.message;
+      }
+
+      setError(functionMessage || fnErr?.message || "Registration failed.");
       setLoading(false);
       return;
     }

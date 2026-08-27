@@ -230,7 +230,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         "is_app_email_allowed",
         {
           app_key: "portal",
-          candidate_email: data.email.trim().toLowerCase(),
+          candidate_email: (data.real_email || data.email).trim().toLowerCase(),
         },
       );
 
@@ -241,7 +241,31 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         return;
       }
 
-      setProfile(data);
+      // Dashboard Manager's Org Chart is authoritative for chairmanship. A
+      // Portal profile may still carry the older "adviser" role after someone
+      // is appointed chairman, so derive the effective role at sign-in.
+      const { data: orgRows, error: orgError } = await supabase
+        .from("org_chart")
+        .select("*");
+      const orgAdviser = !orgError
+        ? findOrgAdviserForProfile(
+            data,
+            (orgRows || []).filter(isOrgAdviser),
+          )
+        : null;
+      setProfile(
+        orgAdviser
+          ? {
+              ...data,
+              role: orgAdviser.is_grade_chairman
+                ? "grade_chairman"
+                : data.role,
+              grade_level_assigned:
+                data.grade_level_assigned ||
+                adviserGradeKey(orgAdviser.grade_level),
+            }
+          : data,
+      );
     } catch (err) {
       console.error("Error fetching user profile:", err);
     } finally {
@@ -333,7 +357,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               className={`nav-item ${activeTab === "data" ? "active" : ""}`}
               onClick={() => setActiveTab("data")}
             >
-              <span className="nav-icon">📊</span> Learners Information
+              <span className="nav-icon">📊</span> Enrollment Information
             </button>
 
             {/* AUTO ID TAB */}
@@ -385,9 +409,11 @@ export default function DashboardPage({ session, userSession, onLogout }) {
 
         {/* Content Panel Area */}
         <main className="dash-content">
-          {activeTab === "enrollment" && <EnrollmentForm />}
-          {activeTab === "advisory" && isAdviser && (
-            <AdvisoryClass profile={profile} />
+          {activeTab === "enrollment" && <EnrollmentForm profile={profile} />}
+          {isAdviser && (
+            <div style={{ display: activeTab === "advisory" ? "block" : "none" }}>
+              <AdvisoryClass profile={profile} />
+            </div>
           )}
           <div style={{ display: activeTab === "data" ? "block" : "none" }}>
             <EnrollmentDataTab />
@@ -443,7 +469,7 @@ function AdvisoryListTab({ profile, isGradeChairman }) {
   }, [profile]);
 
   const fetchAdvisoryStudents = async () => {
-    const result = await loadAdvisoryRoster(profile, isGradeChairman);
+    const result = await loadAdvisoryRoster(profile);
     setLinkedOrgAdviser(result.orgAdviser);
     setStudents(result.students);
   };

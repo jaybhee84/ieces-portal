@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { orgAdviserName } from "../lib/orgAdvisers";
+import { adviserGradeKey, orgAdviserName } from "../lib/orgAdvisers";
 import { PHILIRI_READING_CATEGORIES } from "../lib/readingOptions";
 
 // List of all 45 Barangays in Isabela City
@@ -86,6 +86,15 @@ const RELIGIONS_WESTERN_MINDANAO = [
 
 const IECES_SCHOOL_NAME = "Isabela East Central Elementary School";
 
+const parseStoredName = (value) => {
+  const parts = String(value || "").split(",").map((part) => part.trim());
+  return {
+    family_name: parts[0] || "",
+    first_name: parts[1] || "",
+    middle_name: parts.slice(2).join(" ") || "",
+  };
+};
+
 function getCurrentSchoolYear() {
   const today = new Date();
   const year = today.getFullYear();
@@ -93,9 +102,11 @@ function getCurrentSchoolYear() {
   return `${startYear}–${startYear + 1}`;
 }
 
-export function EnrollmentForm() {
+export function EnrollmentForm({ profile }) {
   const [advisers, setAdvisers] = useState([]);
   const [adviserLoadError, setAdviserLoadError] = useState("");
+  const [existingLearnerId, setExistingLearnerId] = useState(null);
+  const [lrnLookupMessage, setLrnLookupMessage] = useState("");
 
   // Parent details & status flags
   const [father, setFather] = useState({
@@ -148,6 +159,23 @@ export function EnrollmentForm() {
 
   // Modal notification state
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successNotice, setSuccessNotice] = useState({
+    title: "Learner Registration Successful!",
+    message: "The learner has been registered successfully.",
+  });
+  const assignedGrade = adviserGradeKey(profile?.grade_level_assigned);
+  const hasAssignedGrade = ["0", "1", "2", "3", "4", "5", "6"].includes(
+    assignedGrade,
+  );
+
+  useEffect(() => {
+    if (!hasAssignedGrade) return;
+    setFormData((current) =>
+      current.grade_level === assignedGrade
+        ? current
+        : { ...current, grade_level: assignedGrade, adviser_id: "" },
+    );
+  }, [assignedGrade, hasAssignedGrade]);
   const [errorMessage, setErrorMessage] = useState("");
 
   // Webcam states & refs
@@ -204,6 +232,71 @@ export function EnrollmentForm() {
   useEffect(() => {
     return () => stopCamera();
   }, []);
+
+  useEffect(() => {
+    const lrn = formData.lrn.trim();
+    if (lrn.length !== 12) {
+      setExistingLearnerId(null);
+      setLrnLookupMessage("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    const lookupLearner = async () => {
+      setLrnLookupMessage("Looking up learner...");
+      const { data, error } = await supabase
+        .from("students")
+        .select("*")
+        .eq("lrn", lrn)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setLrnLookupMessage(`Could not look up LRN: ${error.message}`);
+        return;
+      }
+      if (!data) {
+        setExistingLearnerId(null);
+        setLrnLookupMessage("New learner LRN. Enter the enrollment details.");
+        return;
+      }
+
+      const fatherData = parseStoredName(data.father_name);
+      const motherData = parseStoredName(data.mother_name);
+      const address = String(data.address || "");
+      const barangayMatch = address.match(/Brgy\.\s*([^,]+)/i);
+      const street = address.split(/,?\s*Brgy\./i)[0].trim();
+      setExistingLearnerId(data.id);
+      setFatherDeceased(String(data.father_name).toUpperCase() === "DECEASED");
+      setMotherDeceased(String(data.mother_name).toUpperCase() === "DECEASED");
+      setFather(fatherData);
+      setMother(motherData);
+      setSelectedBarangay(barangayMatch?.[1]?.trim() || "");
+      setStreetAddress(street);
+      setCapturedPhoto(data.photo_url || null);
+      setFormData((current) => ({
+        ...current,
+        family_name: data.family_name || "",
+        first_name: data.first_name || "",
+        middle_name: data.middle_name || "",
+        birthdate: data.birthdate ? String(data.birthdate).slice(0, 10) : "",
+        age: data.age ?? "",
+        gender: ["F", "FEMALE", "GIRL"].includes(
+          String(data.gender || data.sex || "").toUpperCase(),
+        ) ? "Female" : "Male",
+        tribe: data.tribe || "",
+        religion: data.religion || "",
+        is_4ps_beneficiary: Boolean(data.is_4ps),
+        reading_category: data.reading_category || "",
+        contact_number: data.contact_number || "",
+        photo_url: data.photo_url || "",
+      }));
+      setLrnLookupMessage("Existing learner found. Details were prefilled and remain editable.");
+    };
+    lookupLearner();
+    return () => { cancelled = true; };
+  }, [formData.lrn]);
 
   const handleBirthdateChange = (e) => {
     const dob = e.target.value;
@@ -310,8 +403,11 @@ export function EnrollmentForm() {
       ? `${streetAddress ? streetAddress + ", " : ""}Brgy. ${selectedBarangay}, Isabela City`
       : "";
 
+    const { gender, is_4ps_beneficiary, ...editableData } = formData;
     const payload = {
-      ...formData,
+      ...editableData,
+      sex: gender === "Female" ? "F" : "M",
+      is_4ps: is_4ps_beneficiary,
       school_id: String(school.school_id).trim(),
       school_name: school.name || IECES_SCHOOL_NAME,
       school_year: getCurrentSchoolYear(),
@@ -321,11 +417,26 @@ export function EnrollmentForm() {
       address: fullAddress,
     };
 
-    const { error } = await supabase.from("students").insert([payload]);
+    const { error } = existingLearnerId
+      ? await supabase.from("students").update(payload).eq("id", existingLearnerId)
+      : await supabase.from("students").insert([payload]);
 
     if (error) {
       setErrorMessage(`Failed to enroll learner: ${error.message}`);
     } else {
+      setSuccessNotice(
+        existingLearnerId
+          ? {
+              title: "Learner Enrollment Updated!",
+              message:
+                "The learner's existing record has been updated for the selected grade and advisory class.",
+            }
+          : {
+              title: "Learner Registration Successful!",
+              message:
+                "The learner has been registered and assigned to the selected advisory class.",
+            },
+      );
       setShowSuccessModal(true);
       stopCamera();
       setCapturedPhoto(null);
@@ -344,6 +455,8 @@ export function EnrollmentForm() {
       });
       setSelectedBarangay("");
       setStreetAddress("");
+      setExistingLearnerId(null);
+      setLrnLookupMessage("");
 
       setFormData({
         grade_level: "",
@@ -404,11 +517,10 @@ export function EnrollmentForm() {
             </div>
 
             <h3 className="text-xl font-bold text-slate-800 mb-2">
-              Submission Successful!
+              {successNotice.title}
             </h3>
             <p className="text-slate-600 text-sm mb-6">
-              The learner's enrollment details have been submitted and saved
-              successfully.
+              {successNotice.message}
             </p>
 
             <button
@@ -433,22 +545,29 @@ export function EnrollmentForm() {
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
                   Grade Level
                 </label>
-                <select
-                  value={formData.grade_level}
-                  onChange={(e) =>
-                    setFormData({ ...formData, grade_level: e.target.value })
-                  }
-                  className="w-full p-2.5 border rounded-lg bg-slate-50 focus:bg-white text-sm"
-                  required
-                >
-                  <option value="">-- Select Grade Level --</option>
-                  <option value="0">Kindergarten</option>
-                  {[1, 2, 3, 4, 5, 6].map((g) => (
-                    <option key={g} value={g}>
-                      Grade {g}
-                    </option>
-                  ))}
-                </select>
+                {hasAssignedGrade ? (
+                  <input
+                    type="text"
+                    value={assignedGrade === "0" ? "Kindergarten" : `Grade ${assignedGrade}`}
+                    readOnly
+                    className="w-full p-2.5 border rounded-lg bg-slate-100 text-sm font-bold text-slate-700 cursor-not-allowed"
+                  />
+                ) : (
+                  <select
+                    value={formData.grade_level}
+                    onChange={(e) =>
+                      setFormData({ ...formData, grade_level: e.target.value })
+                    }
+                    className="w-full p-2.5 border rounded-lg bg-slate-50 focus:bg-white text-sm"
+                    required
+                  >
+                    <option value="">-- Select Grade Level --</option>
+                    <option value="0">Kindergarten</option>
+                    {[1, 2, 3, 4, 5, 6].map((g) => (
+                      <option key={g} value={g}>Grade {g}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -498,6 +617,11 @@ export function EnrollmentForm() {
                   className="w-full p-2.5 border rounded-lg text-sm"
                   required
                 />
+                {lrnLookupMessage && (
+                  <p className={`mt-1 text-xs ${existingLearnerId ? "text-emerald-600" : "text-slate-500"}`}>
+                    {lrnLookupMessage}
+                  </p>
+                )}
               </div>
             </div>
 

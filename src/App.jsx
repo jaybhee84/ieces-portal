@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
+import { validatePortalSession } from "./lib/portalAuth";
 import LoginPage from "./component/LoginPage";
 import DashboardPage from "./component/DashboardPage";
 
@@ -34,8 +35,17 @@ export default function App() {
       if (session && !isSessionActive) {
         await supabase.auth.signOut();
         setSession(null);
+      } else if (session) {
+        const access = await validatePortalSession(session);
+        if (!access.valid) {
+          sessionStorage.removeItem("is_logged_in");
+          await supabase.auth.signOut();
+          setSession(null);
+        } else {
+          setSession(session);
+        }
       } else {
-        setSession(session);
+        setSession(null);
       }
 
       setLoading(false);

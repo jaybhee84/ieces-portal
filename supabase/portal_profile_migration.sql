@@ -6,6 +6,7 @@ begin;
 create table if not exists public.portal_profile (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null,
+  real_email text not null,
   auth_email text not null,
   username text not null,
   family_name text not null,
@@ -36,9 +37,10 @@ begin
   -- Ignore Auth accounts created by other apps sharing this Supabase project.
   if new.raw_user_meta_data ->> 'app_source' = 'ieces_portal' then
     insert into public.portal_profile (
-      id, email, auth_email, username, family_name, first_name, middle_initial
+      id, email, real_email, auth_email, username, family_name, first_name, middle_initial
     ) values (
       new.id,
+      lower(new.email),
       lower(new.email),
       lower(new.email),
       trim(new.raw_user_meta_data ->> 'username'),
@@ -58,12 +60,11 @@ create trigger on_auth_user_created_portal_profile
 
 alter table public.portal_profile enable row level security;
 
--- Required because the login form resolves an email from a username before auth.
-drop policy if exists "Portal profiles readable for login" on public.portal_profile;
-create policy "Portal profiles readable for login"
+drop policy if exists "Users read own portal profile" on public.portal_profile;
+create policy "Users read own portal profile"
   on public.portal_profile for select
-  to anon, authenticated
-  using (true);
+  to authenticated
+  using ((select auth.uid()) = id);
 
 drop policy if exists "Users update own portal profile" on public.portal_profile;
 create policy "Users update own portal profile"
@@ -72,7 +73,7 @@ create policy "Users update own portal profile"
   using ((select auth.uid()) = id)
   with check ((select auth.uid()) = id);
 
-grant select on public.portal_profile to anon, authenticated;
+grant select on public.portal_profile to authenticated;
 grant update on public.portal_profile to authenticated;
 
 commit;
