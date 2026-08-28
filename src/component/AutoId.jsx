@@ -30,10 +30,16 @@ function deriveValidity(sy) {
   if (range) return `S.Y. ${range[1]} – ${range[2]}`;
   const single = s.match(/(\d{4})/);
   if (single) {
-    const e = +single[1];
-    return `S.Y. ${e - 1} – ${e}`;
+    const startYear = +single[1];
+    return `S.Y. ${startYear} – ${startYear + 1}`;
   }
   return null;
+}
+function currentSchoolYearValidity() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const startYear = today.getMonth() >= 5 ? year : year - 1;
+  return `S.Y. ${startYear} – ${startYear + 1}`;
 }
 function deriveYearToken(sy) {
   if (!sy) return String(new Date().getFullYear());
@@ -83,6 +89,15 @@ function learnerNameFontSize(name) {
   if (length > 26) return 13.5;
   return 16;
 }
+function gradeSectionFontSize(rawGrade, rawSection) {
+  // Keep Kinder's two-line adviser/session label compact. Other grade labels
+  // can be more prominent, while long section names step down to avoid clipping.
+  if (adviserGradeKey(rawGrade) === "0") return 9.5;
+  const sectionLength = String(rawSection || "UNASSIGNED").trim().length;
+  if (sectionLength > 24) return 9.5;
+  if (sectionLength > 17) return 10.5;
+  return 11.5;
+}
 const CARD_WIDTH = 350;
 // Each half of id-template.png is 768 × 1024 (3:4). Preserve that ratio.
 const CARD_HEIGHT = CARD_WIDTH * (1024 / 768);
@@ -109,7 +124,9 @@ function IdCards({ front, back, card }) {
           style={ov(145, 23, 121, 176, {
             borderRadius: "8px",
             overflow: "hidden",
-            backgroundColor: "#bbb",
+            backgroundColor: "#fff",
+            border: "5px solid #D4AF37",
+            boxSizing: "border-box",
           })}
         >
           {front.photoUrl && (
@@ -120,7 +137,9 @@ function IdCards({ front, back, card }) {
                 width: "100%",
                 height: "100%",
                 objectFit: "cover",
+                objectPosition: "center top",
                 display: "block",
+                backgroundColor: "#fff",
               }}
             />
           )}
@@ -140,8 +159,8 @@ function IdCards({ front, back, card }) {
         </div>
         {/* Student ID */}
         <div
-          style={ov(217, 229, 110, undefined, {
-            fontSize: "9.5px",
+          style={ov(212, 229, 110, undefined, {
+            fontSize: `${front.gradeSectionFontSize}px`,
             fontWeight: "800",
             color: "#111",
             fontFamily: "monospace",
@@ -164,6 +183,7 @@ function IdCards({ front, back, card }) {
             lineHeight: "1.2",
             padding: "0 4px",
             whiteSpace: "pre-line",
+            overflow: "hidden",
           })}
         >
           {front.gradeSectionStr}
@@ -187,7 +207,7 @@ function IdCards({ front, back, card }) {
           {front.fullName}
         </div>
         {/* Principal */}
-        <div style={ov(418, 22, 306, undefined, { textAlign: "center" })}>
+        <div style={ov(434, 22, 306, undefined, { textAlign: "center" })}>
           <div
             style={{
               fontSize: "11px",
@@ -293,12 +313,15 @@ const PRINT_SCALE = 324 / CARD_HEIGHT;
 // Folio @page: 8.5×13in, margin 0.3in → printable 7.9×12.4in
 // 3 cols × 3 rows = 9 IDs per page side
 const IDS_PER_PAGE = 9;
+const MAX_PRINT_IDS = 3;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export function AutoId({ profile }) {
   const [learners, setLearners] = useState([]);
   const [selectedId, setSelectedId] = useState("");
-  const [printMode, setPrintMode] = useState("single"); // "single" | "class"
+  const [selectedThreeIds, setSelectedThreeIds] = useState([]);
+  const [printMode, setPrintMode] = useState("single"); // "single" | "double" | "triple" | "class"
+  const [printMethod, setPrintMethod] = useState("ordinary");
   const [filterAdviser, setFilterAdviser] = useState("");
   const [advisers, setAdvisers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -351,7 +374,12 @@ export function AutoId({ profile }) {
           return {
             ...adviser,
             learners: schoolLearners.filter((learner) =>
-              learnerBelongsToOrgAdviser(learner, adviser, legacyIds),
+              learnerBelongsToOrgAdviser(
+                learner,
+                adviser,
+                legacyIds,
+                orgAdvisers.map((item) => item.id),
+              ),
             ),
           };
         })
@@ -367,7 +395,10 @@ export function AutoId({ profile }) {
       if (role !== "admin") {
         const rosterResult = await loadAdvisoryRoster(
           profile,
-          role === "grade_chairman",
+          // Auto ID is class-scoped for every non-admin user. Grade chairmen
+          // may see the whole grade elsewhere, but their ID list must contain
+          // only learners assigned to their own advisory class.
+          false,
         );
         if (rosterResult.error) throw rosterResult.error;
 
@@ -391,9 +422,15 @@ export function AutoId({ profile }) {
       if (adviserRows.length > 0) {
         setFilterAdviser(String(adviserRows[0].id));
         setSelectedId(adviserRows[0].learners[0]?.id || "");
+        setSelectedThreeIds(
+          adviserRows[0].learners
+            .slice(0, MAX_PRINT_IDS)
+            .map((learner) => String(learner.id)),
+        );
       } else {
         setFilterAdviser("");
         setSelectedId("");
+        setSelectedThreeIds([]);
       }
     } catch (e) {
       console.error(e);
@@ -411,6 +448,18 @@ export function AutoId({ profile }) {
     if (!adviserLearners.some((learner) => String(learner.id) === String(selectedId))) {
       setSelectedId(adviserLearners[0]?.id || "");
     }
+    setSelectedThreeIds((current) => {
+      const validIds = current.filter((id) =>
+        adviserLearners.some((learner) => String(learner.id) === String(id)),
+      );
+      const nextIds = [...new Set(validIds)];
+      for (const learner of adviserLearners) {
+        if (nextIds.length >= MAX_PRINT_IDS) break;
+        const learnerId = String(learner.id);
+        if (!nextIds.includes(learnerId)) nextIds.push(learnerId);
+      }
+      return nextIds.slice(0, MAX_PRINT_IDS);
+    });
   }, [filterAdviser, advisers, selectedId]);
 
   const savePrincipal = () => {
@@ -423,36 +472,85 @@ export function AutoId({ profile }) {
   // ── Derived single-learner values ─────────────────────────────────────────
   const idx = learners.findIndex((l) => String(l.id) === String(selectedId));
   const raw = learners[idx] || {};
-  const effectiveGrade =
-    selectedAdviser?.grade_level ||
-    raw.grade_level ||
-    raw.grade ||
-    raw.gradeLevel;
-  const enrolledSY = raw.school_year || raw.sy || null;
-  const validity =
-    deriveValidity(enrolledSY) ||
-    `S.Y. ${new Date().getFullYear() - 1} – ${new Date().getFullYear()}`;
-  const yearToken = deriveYearToken(enrolledSY);
-  const gt = gradeTag(effectiveGrade);
-  const seqNum = String(idx >= 0 ? idx + 1 : 1).padStart(4, "0");
-  const studentIdFmt = `${yearToken}-${gt}-${seqNum}`;
-  const fullName = formatName(raw.first_name, raw.middle_name, raw.family_name, raw.suffix || raw.name_suffix);
-  const gradeSectionStr = formatGradeSection(effectiveGrade, raw.section);
-  const address = raw.address || "Isabela City, Basilan";
-  const guardName = (raw.guardian_name || raw.father_name || raw.mother_name || "N/A").toUpperCase();
-  const guardRel = (raw.guardian_relationship || "PARENT/GUARDIAN").toUpperCase();
-  const contactNum = raw.contact_number || "N/A";
-  const lrn = raw.lrn || "";
-  const photoUrl = raw.photo_url || null;
 
-  const qrPayload = JSON.stringify({
-    lrn, studentId: studentIdFmt, name: fullName,
-    gradeSection: gradeSectionStr, validity, address,
-    guardian: guardName, contact: contactNum, status: "VALID ID",
-  });
+  const buildPreviewCardData = (learnerRaw, learnerIdx) => {
+    const effectiveGrade =
+      selectedAdviser?.grade_level ||
+      learnerRaw.grade_level ||
+      learnerRaw.grade ||
+      learnerRaw.gradeLevel;
+    const enrolledSY = learnerRaw.school_year || learnerRaw.sy || null;
+    const validity =
+      deriveValidity(enrolledSY) ||
+      currentSchoolYearValidity();
+    const yearToken = deriveYearToken(enrolledSY);
+    const gt = gradeTag(effectiveGrade);
+    const seqNum = String(learnerIdx >= 0 ? learnerIdx + 1 : 1).padStart(
+      4,
+      "0",
+    );
+    const studentIdFmt = `${yearToken}-${gt}-${seqNum}`;
+    const fullName = formatName(
+      learnerRaw.first_name,
+      learnerRaw.middle_name,
+      learnerRaw.family_name,
+      learnerRaw.suffix || learnerRaw.name_suffix,
+    );
+    const gradeSectionStr = formatGradeSection(
+      effectiveGrade,
+      learnerRaw.section,
+    );
+    const address = learnerRaw.address || "Isabela City, Basilan";
+    const guardName = (
+      learnerRaw.guardian_name ||
+      learnerRaw.father_name ||
+      learnerRaw.mother_name ||
+      "N/A"
+    ).toUpperCase();
+    const guardRel = (
+      learnerRaw.guardian_relationship || "PARENT/GUARDIAN"
+    ).toUpperCase();
+    const contactNum = learnerRaw.contact_number || "N/A";
+    const lrn = learnerRaw.lrn || "";
+    const photoUrl = learnerRaw.photo_url || null;
+    const qrPayload = JSON.stringify({
+      lrn,
+      studentId: studentIdFmt,
+      name: fullName,
+      gradeSection: gradeSectionStr,
+      validity,
+      address,
+      guardian: guardName,
+      contact: contactNum,
+      status: "VALID ID",
+    });
 
-  const frontData = { lrn, studentIdFmt, gradeSectionStr, fullName, photoUrl, principalName: principalName.toUpperCase(), principalPos };
-  const backData = { address, guardName, guardRel, contactNum, qrPayload };
+    return {
+      enrolledSY,
+      validity,
+      studentIdFmt,
+      front: {
+        lrn,
+        studentIdFmt,
+        gradeSectionStr,
+        gradeSectionFontSize: gradeSectionFontSize(
+          effectiveGrade,
+          learnerRaw.section,
+        ),
+        fullName,
+        photoUrl,
+        principalName: principalName.toUpperCase(),
+        principalPos,
+      },
+      back: { address, guardName, guardRel, contactNum, qrPayload },
+    };
+  };
+
+  const selectedPreview = buildPreviewCardData(raw, idx);
+  const { enrolledSY, validity, studentIdFmt } = selectedPreview;
+  const frontData = selectedPreview.front;
+  const backData = selectedPreview.back;
+  const qrPayload = backData.qrPayload;
 
   const cardStyle = (bgPos) => ({
     width: `${CARD_WIDTH}px`, height: `${CARD_HEIGHT}px`,
@@ -477,6 +575,7 @@ export function AutoId({ profile }) {
     const idFmt = `${yt}-${g}-${seq}`;
     const fn = formatName(learnerRaw.first_name, learnerRaw.middle_name, learnerRaw.family_name, learnerRaw.suffix || learnerRaw.name_suffix);
     const gsSec = formatGradeSection(effectiveLearnerGrade, learnerRaw.section);
+    const gradeSectionFs = `${Math.round(gradeSectionFontSize(effectiveLearnerGrade, learnerRaw.section) * PRINT_SCALE * 100) / 100}px`;
     const addr = learnerRaw.address || "Isabela City, Basilan";
     const gname = (learnerRaw.guardian_name || learnerRaw.father_name || learnerRaw.mother_name || "N/A").toUpperCase();
     const grel = (learnerRaw.guardian_relationship || "PARENT/GUARDIAN").toUpperCase();
@@ -503,25 +602,25 @@ export function AutoId({ profile }) {
 
     if (side === "front") {
       const photoHtml = photo
-        ? `<img src="${photo}" style="width:100%;height:100%;object-fit:cover;display:block;" />`
+        ? `<img src="${photo}" style="width:100%;height:100%;object-fit:cover;object-position:center top;display:block;background:#fff;" />`
         : "";
       return `<div style="${cardBase}">
-        <div style="${o(145,23,121,176,"border-radius:"+Math.round(8*S)+"px;overflow:hidden;background:#bbb;")}">
+        <div style="${o(145,23,121,176,"border:"+Math.max(1,Math.round(5*S))+"px solid #D4AF37;box-sizing:border-box;border-radius:"+Math.round(8*S)+"px;overflow:hidden;background:#fff;")}">
           ${photoHtml}
         </div>
         <div style="${o(183,190,140,undefined,"font-size:"+Math.round(10*S)+"px;font-weight:800;color:#111;font-family:monospace;letter-spacing:0.3px;line-height:1;")}">
           ${lrnNum}
         </div>
-        <div style="${o(217,229,110,undefined,"font-size:"+Math.round(9.5*S)+"px;font-weight:800;color:#111;font-family:monospace;white-space:nowrap;line-height:1;")}">
+        <div style="${o(212,229,110,undefined,"font-size:"+Math.round(9.5*S)+"px;font-weight:800;color:#111;font-family:monospace;white-space:nowrap;line-height:1;")}">
           ${idFmt}
         </div>
-        <div style="${o(264,137,182,40,"display:flex;align-items:center;justify-content:center;font-size:"+Math.round(9.5*S)+"px;font-weight:900;color:#7b0000;text-align:center;line-height:1.2;padding:0 "+Math.round(4*S)+"px;white-space:pre-line;")}">
+        <div style="${o(264,137,182,40,"display:flex;align-items:center;justify-content:center;font-size:"+gradeSectionFs+";font-weight:900;color:#7b0000;text-align:center;line-height:1.2;padding:0 "+Math.round(4*S)+"px;white-space:pre-line;overflow:hidden;")}">
           ${gsSec.replace(/\n/g, "<br>")}
         </div>
         <div style="${o(358,22,306,37,"display:flex;align-items:center;justify-content:center;font-size:"+nameFs+";font-weight:900;color:#000;text-align:center;letter-spacing:0.3px;line-height:1.1;padding:0 "+Math.round(8*S)+"px;overflow:hidden;")}">
           ${fn}
         </div>
-        <div style="${o(418,22,306,undefined,"text-align:center;")}">
+        <div style="${o(434,22,306,undefined,"text-align:center;")}">
           <div style="font-size:${Math.round(11*S)}px;font-weight:900;color:#D4AF37;text-transform:uppercase;letter-spacing:0.5px;text-shadow:0 1px 2px rgba(0,0,0,0.6);line-height:1.3;">
             ${principalName.toUpperCase()}
           </div>
@@ -532,7 +631,7 @@ export function AutoId({ profile }) {
       </div>`;
     } else {
       // back — QR as placeholder (cannot render QR in print window without lib)
-      const qrPay = JSON.stringify({ lrn: lrnNum, studentId: idFmt, name: fn, gradeSection: gsSec, validity: deriveValidity(sy) || `S.Y. ${new Date().getFullYear()-1}–${new Date().getFullYear()}`, address: addr, guardian: gname, contact: cnum, status: "VALID ID" });
+      const qrPay = JSON.stringify({ lrn: lrnNum, studentId: idFmt, name: fn, gradeSection: gsSec, validity: deriveValidity(sy) || currentSchoolYearValidity(), address: addr, guardian: gname, contact: cnum, status: "VALID ID" });
       const qrSize = Math.round(68 * S);
       // Encode QR as a URL for a QR API (Google Charts QR endpoint - works offline once cached, or use blank)
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(qrPay)}`;
@@ -561,10 +660,29 @@ export function AutoId({ profile }) {
     if (printMode === "single") {
       return idx >= 0 ? [{ raw, idx }] : [];
     }
+    if (["double", "triple"].includes(printMode) && filterAdviser) {
+      const requestedCount = printMode === "double" ? 2 : 3;
+      return selectedThreeIds
+        .slice(0, requestedCount)
+        .map((id) =>
+          adviserLearners.find(
+            (learner) => String(learner.id) === String(id),
+          ),
+        )
+        .filter(Boolean)
+        .map((learner) => ({
+          raw: learner,
+          idx: learners.findIndex(
+            (item) => String(item.id) === String(learner.id),
+          ),
+        }));
+    }
     if (printMode === "class" && filterAdviser) {
       return adviserLearners.map((learner) => ({
         raw: learner,
-        idx: learners.findIndex((item) => String(item.id) === String(learner.id)),
+        idx: learners.findIndex(
+          (item) => String(item.id) === String(learner.id),
+        ),
       }));
     }
     return [];
@@ -572,12 +690,35 @@ export function AutoId({ profile }) {
 
   const printQueue = getPrintQueue();
   const pagesNeeded = Math.ceil(printQueue.length / IDS_PER_PAGE);
+  const focusedPrintCount =
+    printMode === "double" ? 2 : printMode === "triple" ? 3 : 1;
+  const sheetsNeeded =
+    printQueue.length === 0
+      ? 0
+      : ["single", "double", "triple"].includes(printMode) &&
+          printMethod === "ordinary"
+        ? 1
+        : printMethod === "ordinary"
+          ? pagesNeeded * 2
+          : pagesNeeded;
+  const hasValidPrintSelection =
+    ["double", "triple"].includes(printMode)
+      ? printQueue.length === focusedPrintCount
+      : printQueue.length > 0;
 
   // ── Print handler ─────────────────────────────────────────────────────────
   const handlePrint = async () => {
     const queue = getPrintQueue();
-    if (queue.length === 0) {
-      alert("No learners selected for printing.");
+    if (
+      queue.length === 0 ||
+      (["double", "triple"].includes(printMode) &&
+        queue.length !== focusedPrintCount)
+    ) {
+      alert(
+        ["double", "triple"].includes(printMode)
+          ? `Please select ${focusedPrintCount} different learners for this print layout.`
+          : "No learners selected for printing.",
+      );
       return;
     }
     setPrinting(true);
@@ -603,10 +744,10 @@ export function AutoId({ profile }) {
       const H = Math.round(CARD_HEIGHT * PRINT_SCALE);
       const gap = 6; // px between cards
 
-      // Build pages: each page holds up to 9 fronts (3×3), then 9 backs (3×3)
-      // We interleave: page 1 = fronts of learners 0-8, page 2 = backs of learners 0-8,
-      // page 3 = fronts of learners 9-17, etc. (so you can cut and have matching sets)
-      let pagesHtml = "";
+      // Build pages: each page holds up to 9 fronts (3×3), then 9 backs (3×3).
+      let frontPagesHtml = "";
+      let backPagesHtml = "";
+      let interleavedPagesHtml = "";
 
       for (let p = 0; p < pagesNeeded; p++) {
         const chunk = queue.slice(p * IDS_PER_PAGE, (p + 1) * IDS_PER_PAGE);
@@ -617,9 +758,16 @@ export function AutoId({ profile }) {
           frontsGrid += `<div style="display:inline-block;">${buildCardHtml(templateDataUrl, r, i, "front")}</div>`;
         });
 
-        // Backs page
+        // Cut-and-stick uses the same position order on separate sheets.
+        // Long-edge duplex mirrors every row so each back lands behind its front.
         let backsGrid = "";
-        chunk.forEach(({ raw: r, idx: i }) => {
+        const backChunk =
+          printMethod === "duplex"
+            ? Array.from({ length: Math.ceil(chunk.length / 3) }, (_, row) =>
+                chunk.slice(row * 3, row * 3 + 3).reverse(),
+              ).flat()
+            : chunk;
+        backChunk.forEach(({ raw: r, idx: i }) => {
           backsGrid += `<div style="display:inline-block;">${buildCardHtml(templateDataUrl, r, i, "back")}</div>`;
         });
 
@@ -628,17 +776,73 @@ export function AutoId({ profile }) {
         const titleStyle = `font-size:9pt;font-weight:700;color:#7b0000;text-align:center;margin-bottom:6px;letter-spacing:0.03em;font-family:sans-serif;`;
         const subStyle = `font-size:7pt;color:#888;text-align:center;margin-bottom:8px;font-family:sans-serif;`;
 
-        pagesHtml += `
-          <div style="${pageStyle}">
+        const frontPage = `<div style="${pageStyle}">
             <div style="${titleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student ID (FRONTS)</div>
             <div style="${subStyle}">Batch ${p+1} of ${pagesNeeded} • ${chunk.length} IDs • Print on Folio (8.5×13in)</div>
             <div style="${gridStyle}">${frontsGrid}</div>
-          </div>
-          <div style="${pageStyle}">
+          </div>`;
+        const backPage = `<div style="${pageStyle}">
             <div style="${titleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student ID (BACKS)</div>
-            <div style="${subStyle}">Batch ${p+1} of ${pagesNeeded} • Align with corresponding FRONTS page before cutting</div>
+            <div style="${subStyle}">Batch ${p+1} of ${pagesNeeded} • ${
+              printMethod === "ordinary"
+                ? "Cut and attach to the matching front in the same numbered position"
+                : "Long-edge duplex layout — back columns are mirrored for alignment"
+            }</div>
             <div style="${gridStyle}">${backsGrid}</div>
           </div>`;
+
+        frontPagesHtml += frontPage;
+        backPagesHtml += backPage;
+        interleavedPagesHtml += frontPage + backPage;
+      }
+
+      let pagesHtml =
+        printMethod === "ordinary"
+          ? frontPagesHtml + backPagesHtml
+          : interleavedPagesHtml;
+
+      // The focused single, double, and triple workflows use a compact layout. Ordinary
+      // glossy paper places each front/back pair together; duplex paper uses
+      // two aligned sides. Whole-class printing keeps the existing page flow.
+      if (["single", "double", "triple"].includes(printMode)) {
+        const focusedPageStyle = `width:7.9in;min-height:12.4in;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:0.15in;page-break-after:always;`;
+        const focusedTitleStyle = `font-size:9pt;font-weight:700;color:#7b0000;text-align:center;margin-bottom:6px;letter-spacing:0.03em;font-family:sans-serif;`;
+        const focusedSubStyle = `font-size:7pt;color:#888;text-align:center;margin-bottom:8px;font-family:sans-serif;`;
+
+        if (printMethod === "ordinary") {
+          const pairedCards = queue
+            .map(
+              ({ raw: learner, idx: learnerIdx }) =>
+                `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "front")}</div>` +
+                `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "back")}</div>`,
+            )
+            .join("");
+          const pairedGridStyle = `display:grid;grid-template-columns:repeat(2,${W}px);gap:${gap}px;justify-content:center;`;
+          pagesHtml = `<div style="${focusedPageStyle}">
+            <div style="${focusedTitleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student IDs</div>
+            <div style="${focusedSubStyle}">Ordinary glossy photo paper • Front and back are side by side • Cut and attach each pair</div>
+            <div style="${pairedGridStyle}">${pairedCards}</div>
+          </div>`;
+        } else {
+          const focusedFronts = queue
+            .map(({ raw: learner, idx: learnerIdx }) => `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "front")}</div>`)
+            .join("");
+          const focusedBacks = [...queue]
+            .reverse()
+            .map(({ raw: learner, idx: learnerIdx }) => `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "back")}</div>`)
+            .join("");
+          const focusedGridStyle = `display:grid;grid-template-columns:repeat(${queue.length},${W}px);gap:${gap}px;justify-content:center;`;
+          pagesHtml = `<div style="${focusedPageStyle}">
+            <div style="${focusedTitleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student IDs (FRONTS)</div>
+            <div style="${focusedSubStyle}">Duplex photo paper • Print this side first</div>
+            <div style="${focusedGridStyle}">${focusedFronts}</div>
+          </div>
+          <div style="${focusedPageStyle}">
+            <div style="${focusedTitleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student IDs (BACKS)</div>
+            <div style="${focusedSubStyle}">Long-edge duplex alignment • Back order is mirrored</div>
+            <div style="${focusedGridStyle}">${focusedBacks}</div>
+          </div>`;
+        }
       }
 
       const html = `<!DOCTYPE html>
@@ -690,48 +894,99 @@ export function AutoId({ profile }) {
           {/* ── Print Mode ── */}
           <div>
             <label className="adv-label">Print Mode</label>
+            <select
+              className="table-select"
+              style={{ width: "min(100%, 420px)", padding: "8px", marginTop: "4px" }}
+              value={printMode}
+              onChange={(e) => setPrintMode(e.target.value)}
+            >
+              <option value="single">Single — 1 ID</option>
+              <option value="double">Double — 2 IDs</option>
+              <option value="triple">Triple — 3 IDs</option>
+              <option value="class">Whole Class</option>
+            </select>
+          </div>
+
+          {/* ── Paper / assembly method ── */}
+          <div>
+            <label className="adv-label">Paper / Assembly Method</label>
             <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginTop: "4px" }}>
               {[
-                { v: "single", label: "🔖 Single Learner" },
-                { v: "class",  label: "📋 By Class / Adviser" },
+                {
+                  v: "ordinary",
+                  label: "✂️ Ordinary Glossy Photo Paper",
+                },
+                {
+                  v: "duplex",
+                  label: "🔄 Double-Sided / Duplex Photo Paper",
+                },
               ].map(({ v, label }) => (
-                <label key={v} style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "0.86rem", fontWeight: "600", color: printMode === v ? "#7b1a1a" : "#444" }}>
-                  <input type="radio" name="printMode" value={v} checked={printMode === v} onChange={() => setPrintMode(v)} />
+                <label
+                  key={v}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    cursor: "pointer",
+                    fontSize: "0.86rem",
+                    fontWeight: "600",
+                    color: printMethod === v ? "#7b1a1a" : "#444",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="printMethod"
+                    value={v}
+                    checked={printMethod === v}
+                    onChange={() => setPrintMethod(v)}
+                  />
                   {label}
                 </label>
               ))}
             </div>
           </div>
 
-          {/* ── Org Chart adviser ── */}
-          <div>
-            <label className="adv-label">Adviser / Class</label>
-            <select
-              className="table-select"
-              style={{ width: "100%", padding: "8px" }}
-              value={filterAdviser}
-              onChange={(e) => setFilterAdviser(e.target.value)}
-            >
-              {advisers.length === 0 && <option value="">No Org Chart advisers found</option>}
-              {advisers.map((adviser) => {
-                const grade = adviserGradeKey(adviser.grade_level);
-                const gradeLabel = grade === "0" ? "Kinder" : grade === "SNED" ? "SNED" : `Grade ${grade}`;
-                return (
-                  <option key={adviser.id} value={adviser.id}>
-                    {gradeLabel} — {orgAdviserName(adviser)} — {adviser.learners.length} learner{adviser.learners.length !== 1 ? "s" : ""}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-
           {/* ── Learner select (single mode) ── */}
+          {printMethod === "duplex" && (
+            <div
+              role="note"
+              style={{
+                width: "min(100%, 720px)",
+                padding: "12px 14px",
+                border: "1px solid #60a5fa",
+                borderLeft: "4px solid #2563eb",
+                borderRadius: "9px",
+                background: "#eff6ff",
+                color: "#1e3a8a",
+                fontSize: "0.82rem",
+                lineHeight: "1.5",
+              }}
+            >
+              <div style={{ fontWeight: "800", marginBottom: "5px" }}>
+                ℹ️ Manual duplex paper-loading guide
+              </div>
+              <div>
+                1. Print the <strong>front page only</strong>. The top of the
+                printed ID may come out at the far/bottom end of the output
+                tray. 2. Pick up the sheet without rotating it, then flip it
+                <strong> left to right</strong> like turning a book cover. 3.
+                Reinsert the <strong>same physical edge that contains the top
+                of the printed ID</strong> into the printer first. 4. Print the
+                <strong> back page only</strong>.
+              </div>
+              <div style={{ marginTop: "5px", color: "#475569" }}>
+                Printer trays differ; test one sheet first to confirm whether
+                the printed side should face up or down.
+              </div>
+            </div>
+          )}
+
           {printMode === "single" && (
             <div>
-              <label className="adv-label">Learners under this adviser</label>
+              <label className="adv-label">Class List</label>
               <select
                 className="table-select"
-                style={{ width: "100%", padding: "8px" }}
+                style={{ width: "min(100%, 520px)", padding: "8px" }}
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
               >
@@ -745,12 +1000,65 @@ export function AutoId({ profile }) {
             </div>
           )}
 
+          {/* Double / triple learner selectors */}
+          {["double", "triple"].includes(printMode) && (
+            <div>
+              <label className="adv-label">
+                Choose {focusedPrintCount} learners
+              </label>
+              <div className="form-row three-col">
+                {Array.from({ length: focusedPrintCount }, (_, slot) => (
+                  <select
+                    key={slot}
+                    className="table-select"
+                    style={{ width: "100%", padding: "8px" }}
+                    value={selectedThreeIds[slot] || ""}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      setSelectedThreeIds((current) => {
+                        const next = [...current];
+                        next[slot] = nextId;
+                        return next.filter(Boolean);
+                      });
+                    }}
+                  >
+                    <option value="">Select learner {slot + 1}</option>
+                    {adviserLearners.map((st) => {
+                      const isChosenElsewhere = selectedThreeIds.some(
+                        (id, chosenSlot) =>
+                          chosenSlot !== slot && String(id) === String(st.id),
+                      );
+                      return (
+                        <option key={st.id} value={st.id} disabled={isChosenElsewhere}>
+                          {st.family_name}, {st.first_name} — {st.lrn || "No LRN"}
+                        </option>
+                      );
+                    })}
+                  </select>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* ── Queue summary ── */}
           {printQueue.length > 0 && (
             <div style={{ padding: "10px 14px", background: "#fef9ee", border: "1px solid #e8c84a", borderRadius: "8px", fontSize: "0.84rem", color: "#7a5a00" }}>
               📄 <strong>{printQueue.length}</strong> learner ID{printQueue.length !== 1 ? "s" : ""} selected →{" "}
-              <strong>{pagesNeeded * 2}</strong> print pages ({pagesNeeded} fronts + {pagesNeeded} backs) →{" "}
-              <strong>{pagesNeeded}</strong> folio sheet{pagesNeeded !== 1 ? "s" : ""} needed (duplex)
+              {["single", "double", "triple"].includes(printMode) && printMethod === "ordinary" ? (
+                <><strong>1</strong> print page with front/back pairs side by side → <strong>1</strong> sheet needed</>
+              ) : (
+                <>
+                  <strong>{pagesNeeded * 2}</strong> print pages ({pagesNeeded} fronts + {pagesNeeded} backs) →{" "}
+                  <strong>{printMethod === "ordinary" ? pagesNeeded * 2 : pagesNeeded}</strong> sheet
+                  {(printMethod === "ordinary" ? pagesNeeded * 2 : pagesNeeded) !== 1 ? "s" : ""} needed ({printMethod === "ordinary" ? "ordinary glossy, cut & attach" : "manual duplex"})
+                </>
+              )}
+            </div>
+          )}
+          {["double", "triple"].includes(printMode) &&
+            printQueue.length < focusedPrintCount && (
+            <div style={{ padding: "10px 14px", background: "#fff7ed", border: "1px solid #fdba74", borderRadius: "8px", fontSize: "0.84rem", color: "#9a3412" }}>
+              Select {focusedPrintCount} different learners before printing this layout.
             </div>
           )}
 
@@ -801,26 +1109,42 @@ export function AutoId({ profile }) {
           </div>
 
           {/* Print button */}
+          {printQueue.length > 0 && <div
+            style={{
+              width: "fit-content",
+              maxWidth: "100%",
+              padding: "9px 13px",
+              border: "1px solid #e2b93b",
+              borderLeft: "4px solid #b7791f",
+              borderRadius: "8px",
+              background: "#fff8dc",
+              color: "#744210",
+              fontSize: "0.82rem",
+              fontWeight: "700",
+            }}
+          >
+            📌 Sheets needed: <strong>{sheetsNeeded}</strong>
+          </div>}
           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "12px", marginTop: "4px" }}>
             {printing && <span style={{ fontSize: "0.82rem", color: "#7b1a1a", fontWeight: "600" }}>Preparing print…</span>}
             <button
               onClick={handlePrint}
-              disabled={printing || printQueue.length === 0}
+              disabled={printing || !hasValidPrintSelection}
               style={{
                 padding: "10px 28px",
-                background: printing || printQueue.length === 0 ? "#ccc" : "linear-gradient(135deg,#7b1a1a,#5a1010)",
+                background: printing || !hasValidPrintSelection ? "#ccc" : "linear-gradient(135deg,#7b1a1a,#5a1010)",
                 color: "#f5c518", border: "none", borderRadius: "10px",
-                fontWeight: "800", fontSize: "0.88rem", cursor: printing || printQueue.length === 0 ? "not-allowed" : "pointer",
+                fontWeight: "800", fontSize: "0.88rem", cursor: printing || !hasValidPrintSelection ? "not-allowed" : "pointer",
                 letterSpacing: "0.04em", boxShadow: "0 4px 12px rgba(123,26,26,0.3)",
               }}
             >
-              🖨️ Print {printQueue.length > 1 ? `${printQueue.length} IDs` : "ID"} — Folio (8.5 × 13 in)
+              Print ID
             </button>
           </div>
         </div>
       </div>
 
-      {/* ── ID Preview (single mode) ── */}
+      {/* ── ID Preview ── */}
       <div ref={printRef} style={{ display: "none" }} aria-hidden>
         <QRCodeSVG value={qrPayload} size={68} level="M" />
       </div>
@@ -833,9 +1157,62 @@ export function AutoId({ profile }) {
 
       {printMode !== "single" && printQueue.length > 0 && (
         <div className="dash-card">
-          <p style={{ fontSize: "0.85rem", color: "#555", textAlign: "center", padding: "12px 0" }}>
-            Preview shows single-learner mode only. Click Print to render all {printQueue.length} IDs.
-          </p>
+          <div className="dash-card-header">
+            <h2>
+              {printMode === "double"
+                ? "Double ID Preview"
+                : printMode === "triple"
+                  ? "Triple ID Preview"
+                  : "Whole Class ID Preview"}
+            </h2>
+            <p>
+              Review the front and back of {printMode === "class"
+                ? `all ${printQueue.length}`
+                : `the ${focusedPrintCount}`} learner IDs before printing.
+            </p>
+          </div>
+          <div style={{ display: "grid", gap: "24px" }}>
+            {printQueue.map(({ raw: learner, idx: learnerIdx }, queueIdx) => {
+              const preview = buildPreviewCardData(learner, learnerIdx);
+              return (
+                <div
+                  key={learner.id || queueIdx}
+                  style={{
+                    padding: "18px",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "12px",
+                    background: "#f8fafc",
+                  }}
+                >
+                  <div
+                    style={{
+                      marginBottom: "14px",
+                      fontSize: "0.86rem",
+                      fontWeight: "800",
+                      color: "#334155",
+                      textAlign: "center",
+                    }}
+                  >
+                    {queueIdx + 1}. {preview.front.fullName}
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "32px",
+                      justifyContent: "center",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <IdCards
+                      front={preview.front}
+                      back={preview.back}
+                      card={cardStyle}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

@@ -302,6 +302,7 @@ export function EnrollmentDataTab() {
               student,
               adviser,
               [...assignmentIds],
+              orgAdvisers.map((item) => item.id),
             ),
           );
           return { adviser, ...summarize(assignedStudents) };

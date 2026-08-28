@@ -483,10 +483,12 @@
 }
 
 .adv-label {
+    display: block;
     font-size: 0.65rem;
     text-transform: uppercase;
     color: #7a6060;
     font-weight: 700;
+    margin-bottom: 4px;
 }
 
 .adv-name {

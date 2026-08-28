@@ -22,6 +22,7 @@ export function TransferLearner({ profile }) {
 
   // Track pending transfers: { [studentId]: targetAdviserId }
   const [pendingTransfers, setPendingTransfers] = useState({});
+  const [approvedTransfers, setApprovedTransfers] = useState({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -37,7 +38,22 @@ export function TransferLearner({ profile }) {
     });
     if (result.error) return result;
 
-    return { data: result.data || [], error: null };
+    // A deployed legacy RPC may still match an old section name after a
+    // transfer. When adviser_id points to a current Org Chart adviser, that
+    // explicit assignment is authoritative.
+    const orgAdviserIds = new Set(advisers.map((item) => String(item.id)));
+    const selectedAdviserId = String(adviser.id);
+    const learners = (result.data || []).filter((learner) => {
+      const assignedAdviserId = learner.adviser_id
+        ? String(learner.adviser_id)
+        : "";
+      return (
+        !orgAdviserIds.has(assignedAdviserId) ||
+        assignedAdviserId === selectedAdviserId
+      );
+    });
+
+    return { data: learners, error: null };
   };
 
   // Fetch advisers for the chairman's assigned grade level
@@ -105,15 +121,11 @@ export function TransferLearner({ profile }) {
 
   // Helper to sort learners: Male A-Z first, Female A-Z second
   const getSortedLearners = (studentsList) => {
-    const activeList = studentsList.filter(
-      (s) => !pendingTransfers[s.id], // Exclude students staged to transfer out
-    );
-
-    const males = activeList
+    const males = studentsList
       .filter((s) => learnerGenderLabel(s) === "Male")
       .sort((a, b) => (a.family_name || "").localeCompare(b.family_name || ""));
 
-    const females = activeList
+    const females = studentsList
       .filter((s) => learnerGenderLabel(s) === "Female")
       .sort((a, b) => (a.family_name || "").localeCompare(b.family_name || ""));
 
@@ -126,11 +138,33 @@ export function TransferLearner({ profile }) {
       ...prev,
       [student.id]: targetAdviserId,
     }));
+    setMessage("");
+  };
+
+  const handleApproveTransfer = (studentId) => {
+    setApprovedTransfers((prev) => ({ ...prev, [studentId]: true }));
+    setMessage("");
+  };
+
+  const handleRemoveTransfer = (studentId) => {
+    setPendingTransfers((prev) => {
+      const next = { ...prev };
+      delete next[studentId];
+      return next;
+    });
+    setApprovedTransfers((prev) => {
+      const next = { ...prev };
+      delete next[studentId];
+      return next;
+    });
+    setMessage("");
   };
 
   // Commit all pending transfers to Supabase
   const handleSaveTransfer = async () => {
-    const studentIds = Object.keys(pendingTransfers);
+    const studentIds = Object.keys(pendingTransfers).filter(
+      (studentId) => approvedTransfers[studentId],
+    );
     if (studentIds.length === 0) return;
 
     setSaving(true);
@@ -139,15 +173,24 @@ export function TransferLearner({ profile }) {
     try {
       for (const studentId of studentIds) {
         const targetAdviserId = pendingTransfers[studentId];
+        const targetAdviser = advisers.find(
+          (adviser) => String(adviser.id) === String(targetAdviserId),
+        );
+        const targetSection =
+          targetAdviser?.section || targetAdviser?.section_assigned || null;
         const { error } = await supabase
           .from("students")
-          .update({ adviser_id: targetAdviserId })
+          .update({
+            adviser_id: targetAdviserId,
+            ...(targetSection ? { section: targetSection } : {}),
+          })
           .eq("id", studentId);
         if (error) throw error;
       }
 
       setMessage("Transfers saved successfully!");
       setPendingTransfers({});
+      setApprovedTransfers({});
 
       // Refresh both class lists
       if (leftAdviserId) {
@@ -167,28 +210,16 @@ export function TransferLearner({ profile }) {
     }
   };
 
-  // Include staged incoming learners in each list
-  const stagedLeftIncoming = Object.entries(pendingTransfers)
-    .filter(([_, targetId]) => targetId === leftAdviserId)
-    .map(([stId]) =>
-      [...rightStudents, ...leftStudents].find((s) => s.id === stId),
-    )
-    .filter(Boolean);
-
-  const stagedRightIncoming = Object.entries(pendingTransfers)
-    .filter(([_, targetId]) => targetId === rightAdviserId)
-    .map(([stId]) =>
-      [...leftStudents, ...rightStudents].find((s) => s.id === stId),
-    )
-    .filter(Boolean);
-
-  const leftDisplayList = [...leftStudents, ...stagedLeftIncoming];
-  const rightDisplayList = [...rightStudents, ...stagedRightIncoming];
-
-  const leftSorted = getSortedLearners(leftDisplayList);
-  const rightSorted = getSortedLearners(rightDisplayList);
+  // Keep the current advisory rosters unchanged until Save is confirmed.
+  const leftSorted = getSortedLearners(leftStudents);
+  const rightSorted = getSortedLearners(rightStudents);
 
   const pendingCount = Object.keys(pendingTransfers).length;
+  const approvedCount = Object.keys(approvedTransfers).filter(
+    (studentId) => pendingTransfers[studentId],
+  ).length;
+  const allTransfersApproved =
+    pendingCount > 0 && approvedCount === pendingCount;
   const pendingDetails = Object.entries(pendingTransfers).map(
     ([studentId, targetAdviserId]) => {
       const learner = [...leftStudents, ...rightStudents].find(
@@ -249,6 +280,7 @@ export function TransferLearner({ profile }) {
           sortedLearners={leftSorted}
           targetAdviserId={rightAdviserId}
           onTransfer={handleStageTransfer}
+          pendingTransfers={pendingTransfers}
           loading={loading}
           direction="right"
         />
@@ -263,6 +295,7 @@ export function TransferLearner({ profile }) {
           sortedLearners={rightSorted}
           targetAdviserId={leftAdviserId}
           onTransfer={handleStageTransfer}
+          pendingTransfers={pendingTransfers}
           loading={loading}
           direction="left"
         />
@@ -289,6 +322,12 @@ export function TransferLearner({ profile }) {
                   <th className="p-3 border-b border-slate-200">
                     Transfer To
                   </th>
+                  <th className="p-3 border-b border-slate-200 text-center">
+                    Status
+                  </th>
+                  <th className="p-3 border-b border-slate-200 text-center">
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -308,6 +347,39 @@ export function TransferLearner({ profile }) {
                           ? orgAdviserName(targetAdviser)
                           : "Unknown advisory"}
                       </td>
+                      <td className="p-3 text-center">
+                        <span
+                          className={`inline-flex px-2.5 py-1 rounded-full font-bold ${
+                            approvedTransfers[studentId]
+                              ? "bg-green-100 text-green-700"
+                              : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {approvedTransfers[studentId]
+                            ? "Approved"
+                            : "For Approval"}
+                        </span>
+                      </td>
+                      <td className="p-3 text-center whitespace-nowrap">
+                        {!approvedTransfers[studentId] && (
+                          <button
+                            type="button"
+                            onClick={() => handleApproveTransfer(studentId)}
+                            disabled={saving}
+                            className="px-3 py-1.5 mr-2 rounded bg-green-600 text-white font-bold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Approve Transfer
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTransfer(studentId)}
+                          disabled={saving}
+                          className="px-3 py-1.5 rounded border border-red-300 bg-white text-red-700 font-bold hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Remove
+                        </button>
+                      </td>
                     </tr>
                   ),
                 )}
@@ -324,14 +396,14 @@ export function TransferLearner({ profile }) {
             Pending Transfers:{" "}
           </span>
           <span className="text-sm font-extrabold text-blue-600">
-            {pendingCount} Learner(s) staged
+            {pendingCount} Learner(s) staged · {approvedCount} approved
           </span>
         </div>
         <button
           onClick={handleSaveTransfer}
-          disabled={pendingCount === 0 || saving}
+          disabled={!allTransfersApproved || saving}
           className={`px-6 py-2.5 rounded-md font-bold text-sm text-white transition-all ${
-            pendingCount === 0 || saving
+            !allTransfersApproved || saving
               ? "bg-slate-300 cursor-not-allowed"
               : "bg-blue-600 hover:bg-blue-700 shadow-md cursor-pointer"
           }`}
@@ -353,6 +425,7 @@ function ClassPanel({
   sortedLearners,
   targetAdviserId,
   onTransfer,
+  pendingTransfers,
   loading,
   direction,
 }) {
@@ -411,7 +484,7 @@ function ClassPanel({
                     #
                   </th>
                   <th className="p-2 border-r border-slate-200">Name</th>
-                  <th className="p-2 text-center w-24">Action</th>
+                  <th className="p-2 text-center w-32">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -448,21 +521,23 @@ function ClassPanel({
                       <td className="p-2 text-center">
                         <button
                           onClick={() => onTransfer(st, targetAdviserId)}
-                          disabled={!isTargetSelected}
+                          disabled={!isTargetSelected || Boolean(pendingTransfers[st.id])}
                           title={
                             !isTargetSelected
                               ? "Select a destination class on the other side to enable transfer"
-                              : "Transfer Learner"
+                              : pendingTransfers[st.id]
+                                ? "This learner is already in Staged Learner Transfers"
+                                : "Add this learner to Staged Learner Transfers"
                           }
                           className={`px-2 py-1 rounded text-[11px] font-bold text-white transition-all ${
-                            !isTargetSelected
+                            !isTargetSelected || pendingTransfers[st.id]
                               ? "bg-slate-300 cursor-not-allowed"
                               : direction === "right"
                                 ? "bg-blue-600 hover:bg-blue-700 cursor-pointer"
                                 : "bg-purple-600 hover:bg-purple-700 cursor-pointer"
                           }`}
                         >
-                          {direction === "right" ? "Transfer ➔" : "⬅ Transfer"}
+                          Transfer
                         </button>
                       </td>
                     </tr>
@@ -502,21 +577,23 @@ function ClassPanel({
                       <td className="p-2 text-center">
                         <button
                           onClick={() => onTransfer(st, targetAdviserId)}
-                          disabled={!isTargetSelected}
+                          disabled={!isTargetSelected || Boolean(pendingTransfers[st.id])}
                           title={
                             !isTargetSelected
                               ? "Select a destination class on the other side to enable transfer"
-                              : "Transfer Learner"
+                              : pendingTransfers[st.id]
+                                ? "This learner is already in Staged Learner Transfers"
+                                : "Add this learner to Staged Learner Transfers"
                           }
                           className={`px-2 py-1 rounded text-[11px] font-bold text-white transition-all ${
-                            !isTargetSelected
+                            !isTargetSelected || pendingTransfers[st.id]
                               ? "bg-slate-300 cursor-not-allowed"
                               : direction === "right"
                                 ? "bg-blue-600 hover:bg-blue-700 cursor-pointer"
                                 : "bg-purple-600 hover:bg-purple-700 cursor-pointer"
                           }`}
                         >
-                          {direction === "right" ? "Transfer ➔" : "⬅ Transfer"}
+                          Transfer
                         </button>
                       </td>
                     </tr>

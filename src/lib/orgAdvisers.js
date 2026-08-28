@@ -135,6 +135,7 @@ export const learnerBelongsToOrgAdviser = (
   learner,
   adviser,
   legacyIds = [],
+  currentOrgAdviserIds = [],
 ) => {
   if (!learner || !adviser) return false;
 
@@ -147,6 +148,15 @@ export const learnerBelongsToOrgAdviser = (
     assignmentIds.has(String(learner.adviser_id))
   ) {
     return true;
+  }
+
+  // A current Org Chart adviser_id is an explicit assignment. Do not let
+  // older section text assign the learner back to a different adviser.
+  if (
+    learner.adviser_id &&
+    new Set(currentOrgAdviserIds.map(String)).has(String(learner.adviser_id))
+  ) {
+    return false;
   }
 
   const adviserGrade = adviserGradeKey(adviser.grade_level);

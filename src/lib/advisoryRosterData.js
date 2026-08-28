@@ -61,7 +61,12 @@ export const loadAdvisoryRoster = async (profile) => {
 
   return {
     students: schoolLearners.filter((learner) =>
-      learnerBelongsToOrgAdviser(learner, orgAdviser, legacyIds),
+      learnerBelongsToOrgAdviser(
+        learner,
+        orgAdviser,
+        legacyIds,
+        orgAdvisers.map((adviser) => adviser.id),
+      ),
     ),
     orgAdviser,
     orgAdvisers,

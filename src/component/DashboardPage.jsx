@@ -659,7 +659,12 @@ function SearchTab() {
           ...legacyProfileIdsForOrgAdviser(adviser, portalProfiles),
           ...legacyProfileIdsForOrgAdviser(adviser, legacyProfiles),
         ];
-        return learnerBelongsToOrgAdviser(student, adviser, legacyIds);
+        return learnerBelongsToOrgAdviser(
+          student,
+          adviser,
+          legacyIds,
+          orgAdvisers.map((item) => item.id),
+        );
       });
       const adviserProfile = matchedAdviser
         ? [...portalProfiles, ...legacyProfiles].find(
