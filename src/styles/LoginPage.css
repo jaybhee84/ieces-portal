@@ -147,16 +147,81 @@
     padding: 40px;
     overflow-y: auto;
     box-sizing: border-box;
+    position: relative;
 }
 
 .login-card {
     width: 100%;
     max-width: 380px;
-    background: white;
+    background: rgba(255, 255, 255, 0.2);
     border-radius: 18px;
     padding: 36px 32px;
-    box-shadow: 0 8px 40px rgba(123, 26, 26, 0.12);
+    box-shadow: 0 18px 55px rgba(44, 9, 9, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.72);
     box-sizing: border-box;
+    position: relative;
+    z-index: 2;
+    backdrop-filter: blur(11px) saturate(150%);
+    -webkit-backdrop-filter: blur(11px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.82);
+}
+
+.login-slideshow {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: #efe7e3;
+    z-index: 0;
+}
+
+.login-slide {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transform: scale(1.015);
+    transition: opacity 0.8s ease, transform 5s ease;
+}
+
+.login-slide.active {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.login-slide-shade {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(250, 248, 246, 0.38), rgba(72, 12, 12, 0.34));
+    pointer-events: none;
+}
+
+.login-slide-dots {
+    position: absolute;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 7px;
+    z-index: 2;
+}
+
+.login-slide-dot {
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.45);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    transition: width 0.2s ease, background 0.2s ease;
+}
+
+.login-slide-dot.active {
+    width: 24px;
+    background: #f5c518;
+    border-color: #fff4b0;
 }
 
 .lc-header {
@@ -169,12 +234,15 @@
     font-weight: 900;
     color: #7b1a1a;
     margin: 0 0 4px 0;
+    text-shadow: none;
 }
 
 .lc-header p {
     font-size: 0.78rem;
-    color: #7a6060;
+    color: #3a1111;
+    font-weight: 700;
     margin: 0;
+    text-shadow: none;
 }
 
 /* Forms & Inputs */
@@ -191,11 +259,12 @@
 .lf-group label {
     display: block;
     font-size: 0.68rem;
-    font-weight: 700;
-    color: #7a6060;
+    font-weight: 800;
+    color: #330d0d;
     text-transform: uppercase;
     letter-spacing: .06em;
     margin-bottom: 6px;
+    text-shadow: none;
 }
 
 .lf-group input {
@@ -207,7 +276,7 @@
     color: #1a0a0a;
     outline: none;
     transition: border .2s, box-shadow .2s;
-    background: #faf8f6;
+    background: rgba(255, 255, 255, 0.52);
     box-sizing: border-box;
 }
 
@@ -255,10 +324,17 @@
 .lc-footer {
     text-align: center;
     font-size: 0.75rem;
-    color: #7a6060;
+    color: #3a1111;
     margin-top: 20px;
     padding-top: 16px;
     border-top: 1px solid #f0e8e8;
+    font-weight: 600;
+    text-shadow: none;
+}
+
+.lf-group input::placeholder {
+    color: #657084;
+    opacity: 1;
 }
 
 .lc-footer-btn {
@@ -301,6 +377,7 @@
         padding: 20px;
     }
 }
+
 /* ── Version row (bottom of left panel) ─────────────────────────────────── */
 .login-version-row {
   display: flex;

@@ -6,7 +6,55 @@ import {
   validatePortalSession,
 } from "../lib/portalAuth";
 import iecesLogo from "../image/ieceslogo.png";
+import enrollmentA from "../image/enrollmentA.png";
+import enrollmentB from "../image/enrollmentB.png";
+import enrollmentC from "../image/enrollmentC.png";
 import "../styles/LoginPage.css";
+
+const ENROLLMENT_SLIDES = [
+  { src: enrollmentA, alt: "IECES enrollment assistance for families" },
+  { src: enrollmentB, alt: "IECES on-campus enrollment" },
+  { src: enrollmentC, alt: "IECES digital enrollment" },
+];
+
+function EnrollmentSlideshow() {
+  const [activeSlide, setActiveSlide] = useState(0);
+
+  useEffect(() => {
+    const slideTimer = window.setInterval(() => {
+      setActiveSlide((current) => (current + 1) % ENROLLMENT_SLIDES.length);
+    }, 4500);
+
+    return () => window.clearInterval(slideTimer);
+  }, []);
+
+  return (
+    <div className="login-slideshow" aria-label="IECES enrollment highlights">
+      {ENROLLMENT_SLIDES.map((slide, index) => (
+        <img
+          key={slide.src}
+          src={slide.src}
+          alt={index === activeSlide ? slide.alt : ""}
+          className={`login-slide${index === activeSlide ? " active" : ""}`}
+          aria-hidden={index !== activeSlide}
+        />
+      ))}
+      <div className="login-slide-shade" />
+      <div className="login-slide-dots" aria-label="Choose enrollment image">
+        {ENROLLMENT_SLIDES.map((slide, index) => (
+          <button
+            key={slide.src}
+            type="button"
+            className={`login-slide-dot${index === activeSlide ? " active" : ""}`}
+            onClick={() => setActiveSlide(index)}
+            aria-label={`Show enrollment image ${index + 1}`}
+            aria-current={index === activeSlide ? "true" : undefined}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ── Update status modal ───────────────────────────────────────────────────────
 function UpdateModal({ onClose }) {
@@ -210,6 +258,7 @@ export default function LoginPage({ onLoginSuccess }) {
 
       {/* Right panel */}
       <div className="login-right">
+        {view === "login" && <EnrollmentSlideshow />}
         {view === "login" ? (
           <LoginForm
             onGoRegister={() => setView("register")}
