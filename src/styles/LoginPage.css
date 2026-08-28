@@ -286,6 +286,46 @@
     background: white;
 }
 
+.lf-password-wrap {
+    position: relative;
+}
+
+.lf-password-wrap input {
+    padding-right: 44px;
+}
+
+.lf-password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    display: grid;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    place-items: center;
+    transform: translateY(-50%);
+    color: #6b4b4b;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.lf-password-toggle:hover {
+    color: #7b1a1a;
+    background: rgba(123, 26, 26, 0.08);
+}
+
+.lf-password-toggle:focus-visible {
+    outline: 2px solid #7b1a1a;
+    outline-offset: 2px;
+}
+
+.lf-password-toggle svg {
+    width: 18px;
+    height: 18px;
+}
+
 .lf-error {
     font-size: 0.75rem;
     color: #991b1b;

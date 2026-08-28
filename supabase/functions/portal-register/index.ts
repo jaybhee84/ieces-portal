@@ -29,6 +29,31 @@ type RegistrationBody = {
   middle_initial?: string | null;
 };
 
+type OrgChartPerson = {
+  first_name: string | null;
+  family_name: string | null;
+  category: string | null;
+  grade_level: string | null;
+  is_grade_chairman: boolean | null;
+};
+
+const normalizedText = (value: string | null | undefined) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9]/gi, "")
+    .toUpperCase();
+
+const exactName = (value: string | null | undefined) =>
+  String(value ?? "").trim().toUpperCase();
+
+const gradeNumber = (value: string | null | undefined) => {
+  const grade = String(value ?? "").trim().toUpperCase();
+  if (grade === "0" || grade.startsWith("KINDER")) return 0;
+  const numeric = grade.match(/(?:^|\b)([1-6])(?:\b|$)/)?.[1];
+  return numeric ? Number(numeric) : null;
+};
+
 async function findAuthUserByEmail(email: string) {
   const perPage = 1000;
 
@@ -141,6 +166,40 @@ Deno.serve(async (request: Request) => {
       return json(409, { error: "Username is already taken." });
     }
 
+    // IECES Report's shared Org Chart is authoritative for grade-chairman
+    // assignments. Resolve it before Auth/profile creation so the stored
+    // Portal role is correct from the user's first sign-in.
+    const { data: orgRows, error: orgError } = await supabaseAdmin
+      .from("org_chart")
+      .select(
+        "first_name, family_name, category, grade_level, is_grade_chairman",
+      );
+
+    if (orgError) {
+      return json(500, { error: "Could not verify the Org Chart assignment." });
+    }
+
+    const registeredFirstName = exactName(first_name);
+    const registeredFamilyName = exactName(family_name);
+    const orgPerson = (orgRows as OrgChartPerson[] | null)?.find(
+      (person) =>
+        normalizedText(person.category) === "TEACHING" &&
+        exactName(person.first_name) === registeredFirstName &&
+        exactName(person.family_name) === registeredFamilyName,
+    );
+
+    if (!orgPerson) {
+      return json(403, {
+        error:
+          "Your name was not found in the IECES Report Org Chart. Use the same first and family name recorded there or contact the administrator.",
+      });
+    }
+
+    const role = orgPerson.is_grade_chairman
+      ? "grade_chairman"
+      : "adviser";
+    const gradeLevelAssigned = gradeNumber(orgPerson.grade_level);
+
     const authEmail = await portalAuthEmail(normalizedEmail);
     const existingAuthUser = await findAuthUserByEmail(authEmail);
     let authUserId: string;
@@ -198,6 +257,8 @@ Deno.serve(async (request: Request) => {
         family_name: family_name.trim().toUpperCase(),
         first_name: first_name.trim().toUpperCase(),
         middle_initial: middle_initial?.trim().toUpperCase() || null,
+        role,
+        grade_level_assigned: gradeLevelAssigned,
       });
 
     if (insertError) {

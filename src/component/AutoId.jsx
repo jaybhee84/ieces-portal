@@ -315,6 +315,17 @@ const PRINT_SCALE = 324 / CARD_HEIGHT;
 const IDS_PER_PAGE = 9;
 const MAX_PRINT_IDS = 3;
 
+const rosterMembershipKey = (rows) =>
+  rows
+    .map((adviser) =>
+      `${String(adviser.id)}:${(adviser.learners || [])
+        .map((learner) => String(learner.id))
+        .sort()
+        .join(",")}`,
+    )
+    .sort()
+    .join("|");
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export function AutoId({ profile }) {
   const [learners, setLearners] = useState([]);
@@ -336,9 +347,30 @@ export function AutoId({ profile }) {
   );
 
   const printRef = useRef(null);
+  const refreshTimerRef = useRef(null);
+  const rosterMembershipRef = useRef("");
 
   useEffect(() => {
     fetchLearners();
+  }, [profile?.id, profile?.first_name, profile?.family_name, profile?.role]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`auto_id_learners:${profile?.id || "anonymous"}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "students" },
+        () => {
+          window.clearTimeout(refreshTimerRef.current);
+          refreshTimerRef.current = window.setTimeout(fetchLearners, 300);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      window.clearTimeout(refreshTimerRef.current);
+      supabase.removeChannel(channel);
+    };
   }, [profile?.id, profile?.first_name, profile?.family_name, profile?.role]);
 
   const fetchLearners = async () => {
@@ -419,18 +451,23 @@ export function AutoId({ profile }) {
 
       setLearners(schoolLearners);
       setAdvisers(adviserRows);
-      if (adviserRows.length > 0) {
-        setFilterAdviser(String(adviserRows[0].id));
-        setSelectedId(adviserRows[0].learners[0]?.id || "");
-        setSelectedThreeIds(
-          adviserRows[0].learners
-            .slice(0, MAX_PRINT_IDS)
-            .map((learner) => String(learner.id)),
-        );
-      } else {
-        setFilterAdviser("");
-        setSelectedId("");
-        setSelectedThreeIds([]);
+
+      const nextMembership = rosterMembershipKey(adviserRows);
+      if (rosterMembershipRef.current !== nextMembership) {
+        rosterMembershipRef.current = nextMembership;
+        if (adviserRows.length > 0) {
+          setFilterAdviser(String(adviserRows[0].id));
+          setSelectedId(adviserRows[0].learners[0]?.id || "");
+          setSelectedThreeIds(
+            adviserRows[0].learners
+              .slice(0, MAX_PRINT_IDS)
+              .map((learner) => String(learner.id)),
+          );
+        } else {
+          setFilterAdviser("");
+          setSelectedId("");
+          setSelectedThreeIds([]);
+        }
       }
     } catch (e) {
       console.error(e);

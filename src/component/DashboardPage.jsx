@@ -418,7 +418,9 @@ export default function DashboardPage({ session, userSession, onLogout }) {
           <div style={{ display: activeTab === "data" ? "block" : "none" }}>
             <EnrollmentDataTab />
           </div>
-          {activeTab === "autoid" && <AutoId profile={profile} />}
+          <div style={{ display: activeTab === "autoid" ? "block" : "none" }}>
+            <AutoId profile={profile} />
+          </div>
           {activeTab === "transfer_learner" && isGradeChairman && (
             <TransferLearner profile={profile} />
           )}

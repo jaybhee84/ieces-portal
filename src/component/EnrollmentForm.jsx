@@ -86,6 +86,18 @@ const RELIGIONS_WESTERN_MINDANAO = [
 
 const IECES_SCHOOL_NAME = "Isabela East Central Elementary School";
 
+const cameraPreferenceScore = (device) => {
+  const label = String(device?.label || "").toLowerCase();
+  if (/nc beauty|virtual|obs|snap camera|manycam|xsplit|ndi camera/.test(label)) {
+    return -100;
+  }
+  if (/usb|webcam|logitech|brio|c920|c922|external|hd pro|lifecam/.test(label)) {
+    return 100;
+  }
+  if (/integrated|built-in|facetime|front camera/.test(label)) return 10;
+  return 50;
+};
+
 const parseStoredName = (value) => {
   const parts = String(value || "").split(",").map((part) => part.trim());
   return {
@@ -183,15 +195,49 @@ export function EnrollmentForm({ profile }) {
   const canvasRef = useRef(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [activeCameraLabel, setActiveCameraLabel] = useState("");
 
   const startCamera = async () => {
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Camera access is not supported on this machine.");
+      }
+
+      stopCamera();
+
+      let devices = await navigator.mediaDevices.enumerateDevices();
+      let cameras = devices.filter((device) => device.kind === "videoinput");
+
+      // Device names are hidden until camera permission has been granted.
+      if (cameras.some((camera) => !camera.label)) {
+        const permissionStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+        permissionStream.getTracks().forEach((track) => track.stop());
+        devices = await navigator.mediaDevices.enumerateDevices();
+        cameras = devices.filter((device) => device.kind === "videoinput");
+      }
+
+      const selectedCamera = [...cameras].sort(
+        (a, b) => cameraPreferenceScore(b) - cameraPreferenceScore(a),
+      )[0];
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 300, height: 300 },
+        video: {
+          ...(selectedCamera?.deviceId
+            ? { deviceId: { exact: selectedCamera.deviceId } }
+            : {}),
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        await videoRef.current.play();
       }
+      setActiveCameraLabel(selectedCamera?.label || "Default camera");
       setIsCameraActive(true);
     } catch (err) {
       alert("Unable to access camera: " + err.message);
@@ -204,6 +250,7 @@ export function EnrollmentForm({ profile }) {
       tracks.forEach((track) => track.stop());
       videoRef.current.srcObject = null;
     }
+    setActiveCameraLabel("");
     setIsCameraActive(false);
   };
 
@@ -341,13 +388,21 @@ export function EnrollmentForm({ profile }) {
           .filter((teacher) => {
             const teachingType = String(teacher.teaching_type || "").toUpperCase();
             const gradeLevel = String(teacher.grade_level || "").toUpperCase();
-            return teachingType === "ADVISER" && gradeLevel === selectedGrade;
+            return (
+              (teachingType === "ADVISER" || teacher.is_grade_chairman) &&
+              gradeLevel === selectedGrade
+            );
           })
           .map((teacher) => ({
             ...teacher,
             full_name: orgAdviserName(teacher),
           }))
-          .sort((a, b) => a.full_name.localeCompare(b.full_name));
+          .sort(
+            (a, b) =>
+              Number(Boolean(b.is_grade_chairman)) -
+                Number(Boolean(a.is_grade_chairman)) ||
+              a.full_name.localeCompare(b.full_name),
+          );
 
         setAdvisers(matchingAdvisers);
         setAdviserLoadError("");
@@ -1165,6 +1220,11 @@ export function EnrollmentForm({ profile }) {
 
               {isCameraActive && (
                 <>
+                  {activeCameraLabel && (
+                    <p className="text-[11px] text-slate-500 text-center truncate">
+                      {activeCameraLabel}
+                    </p>
+                  )}
                   <button
                     type="button"
                     onClick={capturePhoto}

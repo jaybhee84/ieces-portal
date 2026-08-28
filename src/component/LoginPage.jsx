@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import {
   PORTAL_APP_KEY,
@@ -16,6 +17,25 @@ const ENROLLMENT_SLIDES = [
   { src: enrollmentB, alt: "IECES on-campus enrollment" },
   { src: enrollmentC, alt: "IECES digital enrollment" },
 ];
+
+function PasswordInput({ ariaLabel = "password", ...props }) {
+  const [isVisible, setIsVisible] = useState(false);
+
+  return (
+    <div className="lf-password-wrap">
+      <input type={isVisible ? "text" : "password"} {...props} />
+      <button
+        type="button"
+        className="lf-password-toggle"
+        onClick={() => setIsVisible((visible) => !visible)}
+        aria-label={`${isVisible ? "Hide" : "Show"} ${ariaLabel}`}
+        aria-pressed={isVisible}
+      >
+        {isVisible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+      </button>
+    </div>
+  );
+}
 
 function EnrollmentSlideshow() {
   const [activeSlide, setActiveSlide] = useState(0);
@@ -374,8 +394,8 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
 
         <div className="lf-group">
           <label>Password</label>
-          <input
-            type="password"
+          <PasswordInput
+            ariaLabel="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
@@ -486,37 +506,6 @@ function RegisterForm({ onGoLogin }) {
         }
       }
 
-      const unavailable =
-        fnErr &&
-        (fnErr?.context?.status === 404 ||
-          /function[^.]*not found|not found[^.]*function/i.test(
-            fnErr?.message || "",
-          ));
-
-      // Keep the prior signup flow usable while the function/migration rollout
-      // is still pending. Remove this branch after production deployment.
-      if (unavailable) {
-        const { error: legacyError } = await supabase.auth.signUp({
-          email: normalizedEmail,
-          password: form.password,
-          options: {
-            data: {
-              app_source: "ieces_portal",
-              username: form.username.trim().toLowerCase(),
-              family_name: form.familyName.trim().toUpperCase(),
-              first_name: form.firstName.trim().toUpperCase(),
-              middle_initial: form.middleInitial.trim().toUpperCase() || null,
-            },
-          },
-        });
-        if (!legacyError) {
-          setSuccess(true);
-          setLoading(false);
-          return;
-        }
-        functionMessage = legacyError.message;
-      }
-
       setError(functionMessage || fnErr?.message || "Registration failed.");
       setLoading(false);
       return;
@@ -608,8 +597,8 @@ function RegisterForm({ onGoLogin }) {
         </div>
         <div className="lf-group">
           <label>Password *</label>
-          <input
-            type="password"
+          <PasswordInput
+            ariaLabel="password"
             value={form.password}
             onChange={set("password")}
             placeholder="Min. 6 characters"
@@ -618,8 +607,8 @@ function RegisterForm({ onGoLogin }) {
         </div>
         <div className="lf-group">
           <label>Confirm Password *</label>
-          <input
-            type="password"
+          <PasswordInput
+            ariaLabel="confirmation password"
             value={form.confirmPassword}
             onChange={set("confirmPassword")}
             placeholder="Re-enter password"
