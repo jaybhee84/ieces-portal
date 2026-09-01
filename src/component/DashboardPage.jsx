@@ -7,6 +7,8 @@ import { EnrollmentDataTab } from "./EnrollmentDataTab";
 import { AdvisoryClass } from "./AdvisoryClass";
 import { TransferLearner } from "./TransferLearner";
 import { AutoId } from "./AutoId"; // <--- IMPORT AUTO ID
+import { Form137 } from "./Form137";
+import { FileSpreadsheet } from "lucide-react";
 import {
   adviserGradeKey,
   findOrgAdviserForProfile,
@@ -353,6 +355,15 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               </button>
             )}
 
+            {isAdviser && (
+              <button
+                className={`nav-item ${activeTab === "form137" ? "active" : ""}`}
+                onClick={() => setActiveTab("form137")}
+              >
+                <FileSpreadsheet className="nav-icon" size={18} /> Form 137
+              </button>
+            )}
+
             <button
               className={`nav-item ${activeTab === "data" ? "active" : ""}`}
               onClick={() => setActiveTab("data")}
@@ -415,6 +426,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               <AdvisoryClass profile={profile} />
             </div>
           )}
+          {activeTab === "form137" && isAdviser && <Form137 profile={profile} />}
           <div style={{ display: activeTab === "data" ? "block" : "none" }}>
             <EnrollmentDataTab />
           </div>
