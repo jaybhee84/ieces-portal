@@ -23,6 +23,8 @@ const getCurrentSchoolYear = () => {
 };
 
 const CURRENT_SCHOOL_YEAR = getCurrentSchoolYear();
+const SCHOLASTIC_RECORD_SLOTS = 8;
+const ELEMENTARY_GRADES = ["1", "2", "3", "4", "5", "6"];
 
 const GRADE_ONE_SUBJECTS = [
   "Good Manners and Right Conduct (GMRC)",
@@ -70,14 +72,14 @@ const SUBJECT_OPTIONS = Array.from(new Set([
 
 const emptySubject = (name) => ({ name, q1: "", q2: "", q3: "", q4: "", final: "", remarks: "" });
 
-const emptyRecord = (grade) => ({
+const emptyRecord = (grade = "") => ({
   grade: String(grade),
   ...SCHOOL_DEFAULTS,
   section: "",
   schoolYear: "",
   adviser: "",
   signature: "",
-  subjects: (grade === 1 ? GRADE_ONE_SUBJECTS : REGULAR_SUBJECTS).map(emptySubject),
+  subjects: (String(grade) === "1" ? GRADE_ONE_SUBJECTS : REGULAR_SUBJECTS).map(emptySubject),
   generalAverage: "",
   remedialFrom: "",
   remedialTo: "",
@@ -104,7 +106,12 @@ const initialForm = () => ({
   assessmentDate: "",
   testingCenter: "",
   otherRemark: "",
-  records: Array.from({ length: 8 }, (_, index) => emptyRecord(index + 1)),
+  // SF10-ES has eight scholastic-entry spaces. The first six are prepared for
+  // Grades 1-6; the two remaining spaces cover transfers or repeated grades.
+  records: Array.from(
+    { length: SCHOLASTIC_RECORD_SLOTS },
+    (_, index) => emptyRecord(index < ELEMENTARY_GRADES.length ? index + 1 : ""),
+  ),
   certifications: Array.from({ length: 3 }, emptyCertification),
 });
 
@@ -126,6 +133,39 @@ const separateMiddleInitial = (firstName, middleName) => {
   return match
     ? { firstName: match[1].trim(), middleName: `${match[2].toUpperCase()}.` }
     : { firstName: currentFirstName, middleName: "" };
+};
+
+const normalizeFormData = (savedData, learnerId) => {
+  const base = initialForm();
+  const saved = savedData && typeof savedData === "object" ? savedData : {};
+  const names = separateMiddleInitial(saved.firstName, saved.middleName);
+  const savedRecords = Array.isArray(saved.records) ? saved.records : [];
+  const savedCertifications = Array.isArray(saved.certifications) ? saved.certifications : [];
+
+  return {
+    ...base,
+    ...saved,
+    ...names,
+    learnerId,
+    records: base.records.map((fallback, index) => {
+      const record = savedRecords[index];
+      if (!record || typeof record !== "object") return fallback;
+      const savedGrade = String(record.grade || "");
+      return {
+        ...fallback,
+        ...record,
+        // Older drafts incorrectly labelled the final two entry spaces as
+        // Grades 7 and 8. SF10-ES is an elementary Grades 1-6 record.
+        grade: ELEMENTARY_GRADES.includes(savedGrade) ? savedGrade : fallback.grade,
+        subjects: Array.isArray(record.subjects) ? record.subjects : fallback.subjects,
+        remedial: Array.isArray(record.remedial) ? record.remedial : fallback.remedial,
+      };
+    }),
+    certifications: base.certifications.map((fallback, index) => ({
+      ...fallback,
+      ...(savedCertifications[index] || {}),
+    })),
+  };
 };
 
 const Input = ({ label, value, onChange, type = "text", className = "" }) => (
@@ -198,13 +238,13 @@ function FormPages({ form }) {
           <div>Name and Address of Testing Center: {printedValue(form.testingCenter)} Remark: {printedValue(form.otherRemark)}</div>
         </div>
         <div className="f137-section-title">SCHOLASTIC RECORD</div>
-        <div className="f137-record-grid">{form.records.slice(0, 4).map((record) => <RecordBlock key={record.grade} record={record} />)}</div>
+        <div className="f137-record-grid">{form.records.slice(0, 4).map((record, index) => <RecordBlock key={`front-${index}`} record={record} />)}</div>
         <span className="f137-revision">SFRT 2017</span>
       </article>
       <article className="f137-page f137-page-back">
         <div className="f137-back-top"><strong>SF10-ES</strong><span>Page 2 of ______</span></div>
         <div className="f137-section-title">SCHOLASTIC RECORD</div>
-        <div className="f137-record-grid">{form.records.slice(4, 8).map((record) => <RecordBlock key={record.grade} record={record} />)}</div>
+        <div className="f137-record-grid">{form.records.slice(4, 8).map((record, index) => <RecordBlock key={`back-${index}`} record={record} />)}</div>
         <strong className="f137-transfer-label">For Transfer Out / Elementary School Completer Only</strong>
         {form.certifications.map((item, index) => <CertificationBlock key={index} form={form} item={item} />)}
         <span className="f137-revision">SFRT Revised 2017</span>
@@ -253,20 +293,33 @@ export function Form137({ profile }) {
   const selectLearner = async (learnerId) => {
     const learner = students.find((item) => String(item.id) === learnerId);
     if (!learner) { setForm(initialForm()); setMessage(""); return; }
-    setMessage(`Loading Form 137 for SY ${CURRENT_SCHOOL_YEAR}...`);
+    setMessage("Loading the learner's cumulative Form 137 record...");
 
     const { data: savedRecord, error: loadError } = await supabase.rpc(
       "get_current_student_form_137",
       { p_student_id: learnerId },
     );
     if (!loadError && savedRecord?.data) {
-      const names = separateMiddleInitial(
-        savedRecord.data.firstName,
-        savedRecord.data.middleName,
-      );
-      setForm({ ...initialForm(), ...savedRecord.data, ...names, learnerId });
-      setMessage(`Saved Form 137 for SY ${CURRENT_SCHOOL_YEAR} loaded from students.`);
+      setForm(normalizeFormData(savedRecord.data, learnerId));
+      setMessage("The learner's cumulative Form 137 record was loaded.");
       return;
+    }
+
+    // At the start of a new school year, carry forward the latest cumulative
+    // permanent record instead of starting the learner again with a blank form.
+    if (!loadError) {
+      const { data: history } = await supabase.rpc(
+        "get_student_form_137_history",
+        { p_student_id: learnerId },
+      );
+      const latestEntry = Object.entries(history || {})
+        .filter(([, entry]) => entry?.data)
+        .sort(([left], [right]) => right.localeCompare(left))[0];
+      if (latestEntry) {
+        setForm(normalizeFormData(latestEntry[1].data, learnerId));
+        setMessage(`Cumulative Form 137 carried forward from SY ${latestEntry[0]}.`);
+        return;
+      }
     }
 
     const saved = localStorage.getItem(
@@ -275,8 +328,7 @@ export function Form137({ profile }) {
     if (saved) {
       try {
         const draft = JSON.parse(saved);
-        const names = separateMiddleInitial(draft.firstName, draft.middleName);
-        setForm({ ...initialForm(), ...draft, ...names, learnerId });
+        setForm(normalizeFormData(draft, learnerId));
         setMessage(loadError
           ? "Local backup loaded. Deploy the Form 137 SQL migration to enable database saving."
           : `Local backup for SY ${CURRENT_SCHOOL_YEAR} loaded.`);
@@ -316,6 +368,20 @@ export function Form137({ profile }) {
   };
 
   const updateRecord = (field, value) => setForm((current) => ({ ...current, records: current.records.map((record, index) => index === recordIndex ? { ...record, [field]: value } : record) }));
+  const updateRecordGrade = (grade) => setForm((current) => ({
+    ...current,
+    records: current.records.map((record, index) => index === recordIndex
+      ? {
+          ...record,
+          grade,
+          subjects: (grade === "1" ? GRADE_ONE_SUBJECTS : REGULAR_SUBJECTS).map((name, subjectIndex) => ({
+            ...emptySubject(name),
+            ...(record.subjects?.[subjectIndex] || {}),
+            name,
+          })),
+        }
+      : record),
+  }));
   const updateSubject = (subjectIndex, field, value) => setForm((current) => ({ ...current, records: current.records.map((record, index) => index === recordIndex ? { ...record, subjects: record.subjects.map((subject, rowIndex) => rowIndex === subjectIndex ? { ...subject, [field]: value } : subject) } : record) }));
   const updateRemedial = (rowIndex, field, value) => setForm((current) => ({ ...current, records: current.records.map((record, index) => index === recordIndex ? { ...record, remedial: record.remedial.map((row, indexOfRow) => indexOfRow === rowIndex ? { ...row, [field]: value } : row) } : record) }));
   const updateCertification = (field, value) => setForm((current) => ({ ...current, certifications: current.certifications.map((item, index) => index === certIndex ? { ...item, [field]: value } : item) }));
@@ -350,7 +416,7 @@ export function Form137({ profile }) {
           },
         }),
       );
-      setMessage(`Form 137 saved in students for SY ${CURRENT_SCHOOL_YEAR}.`);
+      setMessage(`Cumulative Form 137 saved, including its Grades 1-6 history (snapshot: SY ${CURRENT_SCHOOL_YEAR}).`);
     }
     setSaving(false);
   };
@@ -377,7 +443,7 @@ export function Form137({ profile }) {
   return (
     <div className="f137-root">
       <div className="f137-toolbar">
-        <div><h2>Form 137</h2><p>SF10-ES learner permanent record - SY {CURRENT_SCHOOL_YEAR}</p></div>
+        <div><h2>Form 137</h2><p>SF10-ES cumulative elementary permanent record • Grades 1-6</p></div>
         <div className="f137-actions"><button type="button" title="Clear form" onClick={clearDraft} disabled={saving}><RotateCcw size={16} /> Clear</button><button type="button" onClick={saveDraft} disabled={saving || !form.learnerId}><Save size={16} /> {saving ? "Saving..." : "Save Information"}</button><button type="button" className="primary" onClick={() => window.print()}><Printer size={16} /> Print</button></div>
       </div>
       {message && <div className="f137-message">{message}</div>}
@@ -395,8 +461,9 @@ export function Form137({ profile }) {
           <Input label="Other credential" value={form.otherCredential} onChange={(value) => updateField("otherCredential", value)} /><Input label="PEPT rating" value={form.peptRating} onChange={(value) => updateField("peptRating", value)} /><Input label="Assessment date" type="date" value={form.assessmentDate} onChange={(value) => updateField("assessmentDate", value)} /><Input label="Testing center" value={form.testingCenter} onChange={(value) => updateField("testingCenter", value)} /><Input label="Remark" value={form.otherRemark} onChange={(value) => updateField("otherRemark", value)} />
         </div>}
         {editorTab === "Scholastic Records" && <>
-          <div className="f137-record-selector"><button type="button" title="Previous grade" onClick={() => setRecordIndex((index) => Math.max(0, index - 1))} disabled={recordIndex === 0}><ChevronLeft size={16} /></button><strong>Grade {recordIndex + 1}</strong><button type="button" title="Next grade" onClick={() => setRecordIndex((index) => Math.min(7, index + 1))} disabled={recordIndex === 7}><ChevronRight size={16} /></button></div>
-          <div className="f137-input-grid f137-record-fields"><Input label="School" value={currentRecord.school} onChange={(value) => updateRecord("school", value)} /><Input label="School ID" value={currentRecord.schoolId} onChange={(value) => updateRecord("schoolId", value)} /><Input label="District" value={currentRecord.district} onChange={(value) => updateRecord("district", value)} /><Input label="Division" value={currentRecord.division} onChange={(value) => updateRecord("division", value)} /><Input label="Region" value={currentRecord.region} onChange={(value) => updateRecord("region", value)} /><Input label="Section" value={currentRecord.section} onChange={(value) => updateRecord("section", value)} /><Input label="School year" value={currentRecord.schoolYear} onChange={(value) => updateRecord("schoolYear", value)} /><Input label="Adviser/teacher" value={currentRecord.adviser} onChange={(value) => updateRecord("adviser", value)} /></div>
+          <div className="f137-record-note"><strong>How this section works:</strong> Kindergarten is documented under Enrollment Eligibility above. Enter final academic records for Grades 1-6 here. The extra entry spaces are for transfers or repeated grade levels.</div>
+          <div className="f137-record-selector"><button type="button" title="Previous scholastic record" onClick={() => setRecordIndex((index) => Math.max(0, index - 1))} disabled={recordIndex === 0}><ChevronLeft size={16} /></button><strong>Record {recordIndex + 1} of {form.records.length}{currentRecord.grade ? ` • Grade ${currentRecord.grade}` : " • Additional entry"}</strong><button type="button" title="Next scholastic record" onClick={() => setRecordIndex((index) => Math.min(form.records.length - 1, index + 1))} disabled={recordIndex === form.records.length - 1}><ChevronRight size={16} /></button></div>
+          <div className="f137-input-grid f137-record-fields"><label className="f137-field"><span>Classified as grade</span><select value={currentRecord.grade} onChange={(event) => updateRecordGrade(event.target.value)}><option value="">Select grade</option>{ELEMENTARY_GRADES.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label><Input label="School" value={currentRecord.school} onChange={(value) => updateRecord("school", value)} /><Input label="School ID" value={currentRecord.schoolId} onChange={(value) => updateRecord("schoolId", value)} /><Input label="District" value={currentRecord.district} onChange={(value) => updateRecord("district", value)} /><Input label="Division" value={currentRecord.division} onChange={(value) => updateRecord("division", value)} /><Input label="Region" value={currentRecord.region} onChange={(value) => updateRecord("region", value)} /><Input label="Section" value={currentRecord.section} onChange={(value) => updateRecord("section", value)} /><Input label="School year" value={currentRecord.schoolYear} onChange={(value) => updateRecord("schoolYear", value)} /><Input label="Adviser/teacher" value={currentRecord.adviser} onChange={(value) => updateRecord("adviser", value)} /></div>
           <p className="f137-subject-help">Select a learning area from the list or type the exact subject name used in the learner's curriculum.</p>
           <datalist id="f137-subject-options">{SUBJECT_OPTIONS.map((subject) => <option key={subject} value={subject} />)}</datalist>
           <div className="f137-grade-entry-wrap"><table className="f137-grade-entry"><thead><tr><th>Learning area</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Final</th><th>Remarks</th></tr></thead><tbody>{currentRecord.subjects.map((subject, index) => <tr key={index}><td><input list="f137-subject-options" value={subject.name} placeholder="Select or type a subject" aria-label={`Learning area ${index + 1}`} onChange={(event) => updateSubject(index, "name", event.target.value)} /></td>{["q1", "q2", "q3", "q4", "final"].map((field) => <td key={field}><input inputMode="numeric" value={subject[field]} aria-label={`${subject.name || `Row ${index + 1}`} ${field}`} onChange={(event) => updateSubject(index, field, event.target.value.replace(/[^0-9.]/g, "").slice(0, 5))} /></td>)}<td><input value={subject.remarks} aria-label={`${subject.name || `Row ${index + 1}`} remarks`} onChange={(event) => updateSubject(index, "remarks", event.target.value)} /></td></tr>)}</tbody></table></div>

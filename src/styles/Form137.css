@@ -20,6 +20,7 @@
 .f137-record-selector strong { text-align: center; color: #7b1a1a; }
 .f137-record-selector button { display: grid; place-items: center; width: 34px; height: 32px; background: #fff; border: 1px solid #d8c9c3; border-radius: 5px; cursor: pointer; }
 .f137-record-selector button:disabled { opacity: .4; cursor: default; }
+.f137-record-note { margin: -4px 0 16px; padding: 10px 12px; border-left: 3px solid #7b1a1a; background: #faf4f1; color: #654c4c; font-size: .76rem; line-height: 1.45; }
 .f137-record-fields { margin-bottom: 14px; }
 .f137-subject-help { margin: 0 0 7px; color: #735f5f; font-size: .72rem; }
 .f137-grade-entry-wrap { overflow-x: auto; border: 1px solid #ded3cf; }
