@@ -10,6 +10,10 @@ import {
   orgAdviserName,
 } from "../lib/orgAdvisers";
 import { loadAdvisoryRoster } from "../lib/advisoryRosterData";
+import {
+  learnerDisplayName,
+  learnerMiddleInitial,
+} from "../lib/learnerRoster";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const LS_KEY_NAME = "autoid_principal_name";
@@ -49,13 +53,26 @@ function deriveYearToken(sy) {
   const single = s.match(/(\d{4})/);
   return single ? single[1] : String(new Date().getFullYear());
 }
-function formatName(first, middle, family, suffix) {
-  const f = (first || "").trim().toUpperCase();
-  const m = (middle || "").trim().toUpperCase();
-  const l = (family || "").trim().toUpperCase();
-  const s = (suffix || "").trim().toUpperCase();
-  const mi = m ? m.charAt(0) + "." : "";
-  return [f, mi, l, s].filter(Boolean).join(" ");
+function formatAutoIdName(learner) {
+  if (learner?.first_name || learner?.family_name) {
+    const middleInitial = learnerMiddleInitial(learner);
+    return [
+      learner.first_name,
+      middleInitial ? `${middleInitial}.` : "",
+      learner.family_name,
+      learner.suffix || learner.name_suffix,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toUpperCase();
+  }
+
+  const rosterName = learnerDisplayName(learner);
+  if (rosterName.includes(",")) {
+    const [familyName, ...givenParts] = rosterName.split(",");
+    return `${givenParts.join(",").trim()} ${familyName.trim()}`.toUpperCase();
+  }
+  return rosterName.toUpperCase();
 }
 function formatGradeSection(rawGrade, rawSection) {
   const gradeKey = adviserGradeKey(rawGrade);
@@ -351,8 +368,15 @@ export function AutoId({ profile }) {
   const rosterMembershipRef = useRef("");
 
   useEffect(() => {
-    fetchLearners();
-  }, [profile?.id, profile?.first_name, profile?.family_name, profile?.role]);
+    fetchLearners(true);
+  }, [
+    profile?.id,
+    profile?.first_name,
+    profile?.family_name,
+    profile?.role,
+    profile?.grade_level_assigned,
+    profile?.test_access_scope,
+  ]);
 
   useEffect(() => {
     const channel = supabase
@@ -362,7 +386,10 @@ export function AutoId({ profile }) {
         { event: "*", schema: "public", table: "students" },
         () => {
           window.clearTimeout(refreshTimerRef.current);
-          refreshTimerRef.current = window.setTimeout(fetchLearners, 300);
+          refreshTimerRef.current = window.setTimeout(
+            () => fetchLearners(false),
+            300,
+          );
         },
       )
       .subscribe();
@@ -371,10 +398,45 @@ export function AutoId({ profile }) {
       window.clearTimeout(refreshTimerRef.current);
       supabase.removeChannel(channel);
     };
-  }, [profile?.id, profile?.first_name, profile?.family_name, profile?.role]);
+  }, [
+    profile?.id,
+    profile?.first_name,
+    profile?.family_name,
+    profile?.role,
+    profile?.grade_level_assigned,
+    profile?.test_access_scope,
+  ]);
 
-  const fetchLearners = async () => {
-    setLoading(true);
+  useEffect(() => {
+    const applyStudentUpdates = (event) => {
+      const updates = Array.isArray(event.detail?.updates)
+        ? event.detail.updates
+        : [];
+      if (!updates.length) return;
+      const updatesById = new Map(
+        updates.map((update) => [String(update.id), update]),
+      );
+      const mergeRows = (rows) =>
+        rows.map((learner) => ({
+          ...learner,
+          ...(updatesById.get(String(learner.id)) || {}),
+        }));
+      setLearners(mergeRows);
+      setAdvisers((current) =>
+        current.map((adviser) => ({
+          ...adviser,
+          learners: mergeRows(adviser.learners || []),
+        })),
+      );
+    };
+
+    window.addEventListener("ieces:students-updated", applyStudentUpdates);
+    return () =>
+      window.removeEventListener("ieces:students-updated", applyStudentUpdates);
+  }, []);
+
+  const fetchLearners = async (showLoader = false) => {
+    if (showLoader) setLoading(true);
     try {
       const [studentResult, orgResult, profileResult, portalResult] = await Promise.all([
         supabase
@@ -424,12 +486,14 @@ export function AutoId({ profile }) {
       const role = String(profile?.role || "").toLowerCase();
       let adviserRows = allAdviserRows;
 
-      if (role !== "admin") {
+      if (profile?.test_access_scope === "grade") {
+        const selectedGrade = adviserGradeKey(profile.grade_level_assigned);
+        adviserRows = allAdviserRows.filter(
+          (adviser) => adviserGradeKey(adviser.grade_level) === selectedGrade,
+        );
+      } else if (role !== "admin") {
         const rosterResult = await loadAdvisoryRoster(
           profile,
-          // Auto ID is class-scoped for every non-admin user. Grade chairmen
-          // may see the whole grade elsewhere, but their ID list must contain
-          // only learners assigned to their own advisory class.
           false,
         );
         if (rosterResult.error) throw rosterResult.error;
@@ -527,25 +591,23 @@ export function AutoId({ profile }) {
       "0",
     );
     const studentIdFmt = `${yearToken}-${gt}-${seqNum}`;
-    const fullName = formatName(
-      learnerRaw.first_name,
-      learnerRaw.middle_name,
-      learnerRaw.family_name,
-      learnerRaw.suffix || learnerRaw.name_suffix,
-    );
+    const fullName = formatAutoIdName(learnerRaw);
     const gradeSectionStr = formatGradeSection(
       effectiveGrade,
       learnerRaw.section,
     );
     const address = learnerRaw.address || "Isabela City, Basilan";
     const guardName = (
+      learnerRaw.guardian_contact_name ||
       learnerRaw.guardian_name ||
       learnerRaw.father_name ||
       learnerRaw.mother_name ||
       "N/A"
     ).toUpperCase();
     const guardRel = (
-      learnerRaw.guardian_relationship || "PARENT/GUARDIAN"
+      learnerRaw.guardian_type ||
+      learnerRaw.guardian_relationship ||
+      "PARENT/GUARDIAN"
     ).toUpperCase();
     const contactNum = learnerRaw.contact_number || "N/A";
     const lrn = learnerRaw.lrn || "";
@@ -610,12 +672,12 @@ export function AutoId({ profile }) {
     const g = gradeTag(effectiveLearnerGrade);
     const seq = String(learnerIdx + 1).padStart(4, "0");
     const idFmt = `${yt}-${g}-${seq}`;
-    const fn = formatName(learnerRaw.first_name, learnerRaw.middle_name, learnerRaw.family_name, learnerRaw.suffix || learnerRaw.name_suffix);
+    const fn = formatAutoIdName(learnerRaw);
     const gsSec = formatGradeSection(effectiveLearnerGrade, learnerRaw.section);
     const gradeSectionFs = `${Math.round(gradeSectionFontSize(effectiveLearnerGrade, learnerRaw.section) * PRINT_SCALE * 100) / 100}px`;
     const addr = learnerRaw.address || "Isabela City, Basilan";
-    const gname = (learnerRaw.guardian_name || learnerRaw.father_name || learnerRaw.mother_name || "N/A").toUpperCase();
-    const grel = (learnerRaw.guardian_relationship || "PARENT/GUARDIAN").toUpperCase();
+    const gname = (learnerRaw.guardian_contact_name || learnerRaw.guardian_name || learnerRaw.father_name || learnerRaw.mother_name || "N/A").toUpperCase();
+    const grel = (learnerRaw.guardian_type || learnerRaw.guardian_relationship || "PARENT/GUARDIAN").toUpperCase();
     const cnum = learnerRaw.contact_number || "N/A";
     const lrnNum = learnerRaw.lrn || "";
     const photo = learnerRaw.photo_url || null;
@@ -1030,7 +1092,7 @@ export function AutoId({ profile }) {
                 {adviserLearners.length === 0 && <option value="">No learners assigned to this adviser</option>}
                 {adviserLearners.map((st) => (
                   <option key={st.id} value={st.id}>
-                    {st.family_name}, {st.first_name} — {st.lrn || "No LRN"}
+                    {formatAutoIdName(st)} — {st.lrn || "No LRN"}
                   </option>
                 ))}
               </select>
@@ -1067,7 +1129,7 @@ export function AutoId({ profile }) {
                       );
                       return (
                         <option key={st.id} value={st.id} disabled={isChosenElsewhere}>
-                          {st.family_name}, {st.first_name} — {st.lrn || "No LRN"}
+                          {formatAutoIdName(st)} — {st.lrn || "No LRN"}
                         </option>
                       );
                     })}

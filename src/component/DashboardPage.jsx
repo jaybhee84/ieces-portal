@@ -12,10 +12,12 @@ import { FileSpreadsheet } from "lucide-react";
 import {
   adviserGradeKey,
   findOrgAdviserForProfile,
+  findOrgTeacherForProfile,
   isOrgAdviser,
   learnerBelongsToOrgAdviser,
   legacyProfileIdsForOrgAdviser,
   orgAdviserName,
+  orgTeachingRole,
 } from "../lib/orgAdvisers";
 import { loadAdvisoryRoster } from "../lib/advisoryRosterData";
 import { PHILIRI_READING_CATEGORIES } from "../lib/readingOptions";
@@ -183,6 +185,13 @@ export default function DashboardPage({ session, userSession, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [appVersion, setAppVersion] = useState("");
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [orgAdvisers, setOrgAdvisers] = useState([]);
+  const [testGrade, setTestGrade] = useState("");
+  const [testAdviserId, setTestAdviserId] = useState("");
+  const [testRole, setTestRole] = useState("adviser");
+  const [testScope, setTestScope] = useState("specific");
+  const [showTestSelector, setShowTestSelector] = useState(true);
+  const [isCreatorAccount, setIsCreatorAccount] = useState(false);
 
   useEffect(() => {
     if (window.electronAPI?.getVersion) {
@@ -243,28 +252,40 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         return;
       }
 
+      const { data: ownerEmail } = await supabase.rpc(
+        "dashboard_login_email",
+        { candidate_username: "admin" },
+      );
+      setIsCreatorAccount(
+        Boolean(ownerEmail) &&
+          String(ownerEmail).toLowerCase() ===
+            String(activeSession?.user?.email || data.auth_email || "").toLowerCase(),
+      );
+
       // Dashboard Manager's Org Chart is authoritative for chairmanship. A
       // Portal profile may still carry the older "adviser" role after someone
       // is appointed chairman, so derive the effective role at sign-in.
       const { data: orgRows, error: orgError } = await supabase
         .from("org_chart")
         .select("*");
-      const orgAdviser = !orgError
-        ? findOrgAdviserForProfile(
-            data,
-            (orgRows || []).filter(isOrgAdviser),
-          )
+      const availableOrgAdvisers = !orgError
+        ? (orgRows || []).filter(isOrgAdviser)
+        : [];
+      setOrgAdvisers(availableOrgAdvisers);
+      const orgTeacher = !orgError
+        ? findOrgTeacherForProfile(data, orgRows || [])
         : null;
+      const resolvedTeachingRole = orgTeachingRole(orgTeacher);
       setProfile(
-        orgAdviser
+        orgTeacher && data.role !== "admin"
           ? {
               ...data,
-              role: orgAdviser.is_grade_chairman
-                ? "grade_chairman"
-                : data.role,
+              role: resolvedTeachingRole,
               grade_level_assigned:
-                data.grade_level_assigned ||
-                adviserGradeKey(orgAdviser.grade_level),
+                resolvedTeachingRole === "subject_teacher"
+                  ? null
+                  : data.grade_level_assigned ||
+                    adviserGradeKey(orgTeacher.grade_level),
             }
           : data,
       );
@@ -296,12 +317,76 @@ export default function DashboardPage({ session, userSession, onLogout }) {
     );
   }
 
-  const isAdminTest = profile?.username === "admin";
+  const isAdminAccount =
+    isCreatorAccount || profile?.role === "admin" || profile?.username === "admin";
+  const selectedTestAdviser = isAdminAccount
+    ? orgAdvisers.find(
+        (adviser) => String(adviser.id) === String(testAdviserId),
+      )
+    : null;
+  const hasTestSelection = Boolean(
+    isAdminAccount &&
+      (testRole === "subject_teacher"
+        ? true
+        : testRole === "adviser"
+          ? selectedTestAdviser
+          : testGrade && (testScope === "grade" || selectedTestAdviser)),
+  );
+  const effectiveProfile = hasTestSelection
+    ? {
+        ...profile,
+        ...(selectedTestAdviser
+          ? {
+              first_name: selectedTestAdviser.first_name,
+              middle_name: selectedTestAdviser.middle_name,
+              family_name: selectedTestAdviser.family_name,
+            }
+          : {}),
+        grade_level_assigned:
+          testRole === "subject_teacher"
+            ? null
+            : selectedTestAdviser
+              ? adviserGradeKey(selectedTestAdviser.grade_level)
+              : testGrade,
+        section_assigned:
+          selectedTestAdviser?.section || selectedTestAdviser?.section_assigned || "",
+        role: testRole,
+        test_access_scope: testScope,
+      }
+    : profile;
+  const testGrades = Array.from(
+    new Set(orgAdvisers.map((adviser) => adviserGradeKey(adviser.grade_level))),
+  ).filter(Boolean).sort((left, right) => {
+    if (left === "SNED") return 1;
+    if (right === "SNED") return -1;
+    return Number(left) - Number(right);
+  });
+  const gradeTestAdvisers = orgAdvisers
+    .filter(
+      (adviser) =>
+        testRole === "adviser" ||
+        adviserGradeKey(adviser.grade_level) === testGrade,
+    )
+    .sort((left, right) => {
+      const leftGrade = adviserGradeKey(left.grade_level);
+      const rightGrade = adviserGradeKey(right.grade_level);
+      const gradeRank = (grade) =>
+        grade === "0" ? 0 : grade === "SNED" ? 7 : Number(grade) || 8;
+      return (
+        gradeRank(leftGrade) - gradeRank(rightGrade) ||
+        orgAdviserName(left).localeCompare(orgAdviserName(right))
+      );
+    });
   const isAdviser =
-    isAdminTest ||
-    profile?.role === "adviser" ||
-    profile?.role === "grade_chairman";
-  const isGradeChairman = isAdminTest || profile?.role === "grade_chairman";
+    effectiveProfile?.role === "adviser" ||
+    effectiveProfile?.role === "grade_chairman";
+  const isGradeChairman = effectiveProfile?.role === "grade_chairman";
+  const isSubjectTeacher = effectiveProfile?.role === "subject_teacher";
+  const gradeLabel = (grade) =>
+    grade === "0" ? "Kinder" : grade === "SNED" ? "SNED" : `Grade ${grade}`;
+  const testViewKey = hasTestSelection
+    ? `${testGrade}:${testAdviserId}:${testRole}:${testScope}`
+    : "account";
 
   return (
     <div className="dash-root">
@@ -318,17 +403,28 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         <div className="dash-header-user">
           <div className="user-details">
             <span className="user-name">
-              {profile?.first_name || profile?.full_name || "User"}{" "}
-              {profile?.family_name || ""}
+              {effectiveProfile?.first_name || effectiveProfile?.full_name || "User"}{" "}
+              {effectiveProfile?.family_name || ""}
             </span>
             <span className="user-role">
-              {isAdminTest
-                ? "⚙ ADMIN TEST — All Features"
-                : profile?.role
-                  ? profile.role.replace("_", " ")
+              {hasTestSelection
+                ? testRole === "subject_teacher"
+                  ? "Admin test · subject teacher"
+                  : `Admin test · ${effectiveProfile.role.replace("_", " ")} · ${gradeLabel(testGrade)} · ${testScope === "grade" ? "All classes" : "Specific class"}`
+                : effectiveProfile?.role
+                  ? effectiveProfile.role.replace("_", " ")
                   : "Teacher"}
             </span>
           </div>
+          {isAdminAccount && hasTestSelection && (
+            <button
+              type="button"
+              className="dash-switch-user-btn"
+              onClick={() => setShowTestSelector(true)}
+            >
+              Switch test user
+            </button>
+          )}
           <button onClick={handleSignOutClick} className="dash-logout-btn">
             Sign Out
           </button>
@@ -372,12 +468,14 @@ export default function DashboardPage({ session, userSession, onLogout }) {
             </button>
 
             {/* AUTO ID TAB */}
+            {!isSubjectTeacher && (
             <button
               className={`nav-item ${activeTab === "autoid" ? "active" : ""}`}
               onClick={() => setActiveTab("autoid")}
             >
               <span className="nav-icon">🪪</span> AutoID
             </button>
+            )}
 
             {/* TRANSFER LEARNER TAB - VISIBLE ONLY TO GRADE CHAIRMAN */}
             {isGradeChairman && (
@@ -419,26 +517,169 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         )}
 
         {/* Content Panel Area */}
-        <main className="dash-content">
-          {activeTab === "enrollment" && <EnrollmentForm profile={profile} />}
+        <main className="dash-content" key={testViewKey}>
+          {activeTab === "enrollment" && <EnrollmentForm profile={effectiveProfile} />}
           {isAdviser && (
             <div style={{ display: activeTab === "advisory" ? "block" : "none" }}>
-              <AdvisoryClass profile={profile} />
+              <AdvisoryClass profile={effectiveProfile} />
             </div>
           )}
-          {activeTab === "form137" && isAdviser && <Form137 profile={profile} />}
+          {activeTab === "form137" && isAdviser && <Form137 profile={effectiveProfile} />}
           <div style={{ display: activeTab === "data" ? "block" : "none" }}>
             <EnrollmentDataTab />
           </div>
-          <div style={{ display: activeTab === "autoid" ? "block" : "none" }}>
-            <AutoId profile={profile} />
-          </div>
+          {!isSubjectTeacher && (
+            <div style={{ display: activeTab === "autoid" ? "block" : "none" }}>
+              <AutoId profile={effectiveProfile} />
+            </div>
+          )}
           {activeTab === "transfer_learner" && isGradeChairman && (
-            <TransferLearner profile={profile} />
+            <TransferLearner profile={effectiveProfile} />
           )}
           {activeTab === "search" && <SearchTab />}
         </main>
       </div>
+      {isAdminAccount && showTestSelector && (
+        <div
+          className="admin-test-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-test-title"
+        >
+          <div className="admin-test-card">
+            <h2 id="admin-test-title">Choose a test user</h2>
+            <p>
+              Select a role and the grade or class you want to test. The
+              teacher's account and password are not used.
+            </p>
+            <label>
+              <span>Act as</span>
+              <select
+                value={testRole}
+                onChange={(event) => {
+                  const role = event.target.value;
+                  setTestRole(role);
+                  setTestAdviserId("");
+                  if (role === "adviser" || role === "subject_teacher") {
+                    setTestGrade("");
+                    setTestScope("specific");
+                  }
+                }}
+              >
+                <option value="adviser">Regular adviser</option>
+                <option value="grade_chairman">Grade chairman</option>
+                <option value="subject_teacher">Subject teacher</option>
+              </select>
+            </label>
+            {testRole === "grade_chairman" && (
+              <label>
+                <span>Grade level</span>
+                <select
+                  value={testGrade}
+                  onChange={(event) => {
+                    setTestGrade(event.target.value);
+                    setTestAdviserId("");
+                  }}
+                >
+                  <option value="">Select grade level</option>
+                  {testGrades.map((grade) => (
+                    <option key={grade} value={grade}>{gradeLabel(grade)}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {testRole === "grade_chairman" && (
+            <label>
+              <span>Class access</span>
+              <select
+                value={testScope}
+                onChange={(event) => {
+                  const scope = event.target.value;
+                  setTestScope(scope);
+                  if (scope === "grade") setTestAdviserId("");
+                }}
+              >
+                <option value="specific">Specific adviser's class</option>
+                <option value="grade">
+                  All classes in selected grade
+                </option>
+              </select>
+            </label>
+            )}
+            {(testRole === "adviser" ||
+              (testRole === "grade_chairman" && testScope === "specific")) && (
+              <label>
+                <span>{testRole === "adviser" ? "Adviser from any grade level" : "Adviser / class assignment"}</span>
+                <select
+                  value={testAdviserId}
+                  disabled={testRole === "grade_chairman" && !testGrade}
+                  onChange={(event) => {
+                    const adviserId = event.target.value;
+                    setTestAdviserId(adviserId);
+                    if (testRole === "adviser") {
+                      const adviser = orgAdvisers.find(
+                        (item) => String(item.id) === adviserId,
+                      );
+                      setTestGrade(
+                        adviser ? adviserGradeKey(adviser.grade_level) : "",
+                      );
+                    }
+                  }}
+                >
+                  <option value="">
+                    {testRole === "adviser"
+                      ? "Select an adviser"
+                      : testGrade
+                        ? "Select an adviser"
+                        : "Select a grade first"}
+                  </option>
+                  {gradeTestAdvisers.map((adviser) => (
+                    <option key={adviser.id} value={String(adviser.id)}>
+                      {testRole === "adviser"
+                        ? `${gradeLabel(adviserGradeKey(adviser.grade_level))} — `
+                        : ""}
+                      {orgAdviserName(adviser)}
+                      {adviser.is_grade_chairman ? " (Grade Chairman)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <div className="admin-test-actions">
+              {hasTestSelection && (
+                <button
+                  type="button"
+                  className="admin-test-cancel"
+                  onClick={() => setShowTestSelector(false)}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                className="admin-test-continue"
+                disabled={
+                  testRole === "subject_teacher"
+                    ? false
+                    : testRole === "adviser"
+                      ? !testAdviserId
+                      : !testGrade ||
+                        (testScope === "specific" && !testAdviserId)
+                }
+                onClick={() => {
+                  setActiveTab("enrollment");
+                  setShowTestSelector(false);
+                }}
+              >
+                Continue as selected user
+              </button>
+            </div>
+            <small>
+              Your admin account remains signed in underneath this temporary test view.
+            </small>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -646,6 +887,184 @@ function AdvisoryListTab({ profile, isGradeChairman }) {
 
 // ── SEARCH TAB ──────────────────────────────────────────────────────────────
 function SearchTab() {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [results, setResults] = useState([]);
+  const [searched, setSearched] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const searchColumns =
+    "id,family_name,first_name,middle_name,name,lrn,grade_level,section,adviser_id";
+  const cleanSearchTerm = (value) =>
+    String(value || "").replace(/[,()%_*]/g, " ").trim();
+
+  useEffect(() => {
+    const term = cleanSearchTerm(searchTerm);
+    if (term.length < 2 || /^\d+$/.test(term)) {
+      setSuggestions([]);
+      return undefined;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      const { data, error } = await supabase
+        .from("students")
+        .select(searchColumns)
+        .eq("school_id", "126001")
+        .ilike("family_name", `${term}%`)
+        .order("family_name", { ascending: true })
+        .order("first_name", { ascending: true })
+        .limit(8);
+      if (active) setSuggestions(error ? [] : data || []);
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [searchTerm]);
+
+  const withAdvisory = async (students) => {
+    const { data: orgRows } = await supabase.from("org_chart").select("*");
+    const advisers = (orgRows || []).filter(isOrgAdviser);
+    const adviserIds = advisers.map((adviser) => adviser.id);
+    return students.map((student) => {
+      const adviser = advisers.find((candidate) =>
+        learnerBelongsToOrgAdviser(student, candidate, [], adviserIds),
+      );
+      const grade = learnerGradeLabel(student);
+      const section =
+        adviser?.section ||
+        adviser?.section_assigned ||
+        student.section ||
+        "";
+      return {
+        ...student,
+        advisory: adviser
+          ? `${grade}${section ? ` - ${section}` : ""} · ${orgAdviserName(adviser)}`
+          : section
+            ? `${grade} - ${section}`
+            : `${grade} - Unassigned`,
+      };
+    });
+  };
+
+  const runSearch = async (rawTerm) => {
+    const term = cleanSearchTerm(rawTerm);
+    if (!term) return;
+    setSearching(true);
+    setErrorMessage("");
+    setSuggestions([]);
+
+    let query = supabase
+      .from("students")
+      .select(searchColumns)
+      .eq("school_id", "126001")
+      .limit(50);
+    query = /^\d+$/.test(term)
+      ? query.eq("lrn", term)
+      : query.ilike("family_name", `%${term}%`);
+
+    const { data, error } = await query;
+    if (error) {
+      setResults([]);
+      setErrorMessage(`Search failed: ${error.message}`);
+    } else {
+      setResults(await withAdvisory(data || []));
+    }
+    setSearched(true);
+    setSearching(false);
+  };
+
+  return (
+    <div className="dash-card">
+      <div className="dash-card-header">
+        <h2>Search Learner</h2>
+        <p>Search all IECES learners by exact LRN or Family Name.</p>
+      </div>
+
+      <div className="relative max-w-3xl">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            runSearch(searchTerm);
+          }}
+          className="search-box"
+        >
+          <input
+            type="text"
+            placeholder="Enter Family Name or 12-digit LRN..."
+            value={searchTerm}
+            onChange={(event) => {
+              setSearchTerm(event.target.value);
+              setSearched(false);
+            }}
+            autoComplete="off"
+            required
+          />
+          <button type="submit" className="lf-btn search-btn" disabled={searching}>
+            {searching ? "Searching..." : "Search"}
+          </button>
+        </form>
+
+        {suggestions.length > 0 && (
+          <div className="absolute left-0 right-24 top-full z-40 -mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+            {suggestions.map((student) => (
+              <button
+                key={student.id}
+                type="button"
+                onClick={() => {
+                  const familyName = student.family_name || "";
+                  setSearchTerm(familyName);
+                  runSearch(familyName);
+                }}
+                className="flex w-full items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 text-left text-sm hover:bg-slate-50 last:border-b-0"
+              >
+                <span className="font-semibold text-slate-800">
+                  {learnerDisplayName(student)}
+                </span>
+                <span className="whitespace-nowrap text-xs font-semibold text-[#7b1a1a]">
+                  {learnerGradeLabel(student)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {errorMessage && (
+        <p className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {errorMessage}
+        </p>
+      )}
+
+      {searched && !errorMessage && (
+        <div className="mt-5 space-y-3">
+          {results.length === 0 ? (
+            <p className="no-results">No learner records matching your search.</p>
+          ) : (
+            results.map((student) => (
+              <div
+                key={student.id}
+                className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+              >
+                <span className="font-bold text-slate-800">
+                  {learnerDisplayName(student)}
+                </span>
+                <span className="text-sm font-semibold text-[#7b1a1a]">
+                  {student.advisory}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LegacySearchTab() {
   const [searchTerm, setSearchTerm] = useState("");
   const [results, setResults] = useState([]);
   const [searched, setSearched] = useState(false);

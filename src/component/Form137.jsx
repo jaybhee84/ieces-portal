@@ -56,6 +56,18 @@ const REGULAR_SUBJECTS = [
   "*Islamic Values Education",
 ];
 
+const SUBJECT_OPTIONS = Array.from(new Set([
+  ...GRADE_ONE_SUBJECTS,
+  ...REGULAR_SUBJECTS,
+  "Character Education",
+  "Civics and Culture",
+  "Edukasyong Pantahanan at Pangkabuhayan (EPP)",
+  "Heograpiya, Kasaysayan at Sibika (HEKASI)",
+  "Makabayan",
+  "Science and Health",
+  "Sibika at Kultura",
+])).filter(Boolean).sort((left, right) => left.localeCompare(right));
+
 const emptySubject = (name) => ({ name, q1: "", q2: "", q3: "", q4: "", final: "", remarks: "" });
 
 const emptyRecord = (grade) => ({
@@ -324,6 +336,20 @@ export function Form137({ profile }) {
       setMessage(`Form 137 was not saved: ${error.message}`);
     } else {
       localStorage.setItem(draftKey, JSON.stringify(form));
+      window.dispatchEvent(
+        new CustomEvent("ieces:students-updated", {
+          detail: {
+            updates: [
+              {
+                id: form.learnerId,
+                first_name: form.firstName,
+                middle_name: form.middleName,
+                family_name: form.lastName,
+              },
+            ],
+          },
+        }),
+      );
       setMessage(`Form 137 saved in students for SY ${CURRENT_SCHOOL_YEAR}.`);
     }
     setSaving(false);
@@ -371,7 +397,9 @@ export function Form137({ profile }) {
         {editorTab === "Scholastic Records" && <>
           <div className="f137-record-selector"><button type="button" title="Previous grade" onClick={() => setRecordIndex((index) => Math.max(0, index - 1))} disabled={recordIndex === 0}><ChevronLeft size={16} /></button><strong>Grade {recordIndex + 1}</strong><button type="button" title="Next grade" onClick={() => setRecordIndex((index) => Math.min(7, index + 1))} disabled={recordIndex === 7}><ChevronRight size={16} /></button></div>
           <div className="f137-input-grid f137-record-fields"><Input label="School" value={currentRecord.school} onChange={(value) => updateRecord("school", value)} /><Input label="School ID" value={currentRecord.schoolId} onChange={(value) => updateRecord("schoolId", value)} /><Input label="District" value={currentRecord.district} onChange={(value) => updateRecord("district", value)} /><Input label="Division" value={currentRecord.division} onChange={(value) => updateRecord("division", value)} /><Input label="Region" value={currentRecord.region} onChange={(value) => updateRecord("region", value)} /><Input label="Section" value={currentRecord.section} onChange={(value) => updateRecord("section", value)} /><Input label="School year" value={currentRecord.schoolYear} onChange={(value) => updateRecord("schoolYear", value)} /><Input label="Adviser/teacher" value={currentRecord.adviser} onChange={(value) => updateRecord("adviser", value)} /></div>
-          <div className="f137-grade-entry-wrap"><table className="f137-grade-entry"><thead><tr><th>Learning area</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Final</th><th>Remarks</th></tr></thead><tbody>{currentRecord.subjects.map((subject, index) => <tr key={index}><td><input value={subject.name} aria-label={`Learning area ${index + 1}`} onChange={(event) => updateSubject(index, "name", event.target.value)} /></td>{["q1", "q2", "q3", "q4", "final"].map((field) => <td key={field}><input inputMode="numeric" value={subject[field]} aria-label={`${subject.name || `Row ${index + 1}`} ${field}`} onChange={(event) => updateSubject(index, field, event.target.value.replace(/[^0-9.]/g, "").slice(0, 5))} /></td>)}<td><input value={subject.remarks} aria-label={`${subject.name || `Row ${index + 1}`} remarks`} onChange={(event) => updateSubject(index, "remarks", event.target.value)} /></td></tr>)}</tbody></table></div>
+          <p className="f137-subject-help">Select a learning area from the list or type the exact subject name used in the learner's curriculum.</p>
+          <datalist id="f137-subject-options">{SUBJECT_OPTIONS.map((subject) => <option key={subject} value={subject} />)}</datalist>
+          <div className="f137-grade-entry-wrap"><table className="f137-grade-entry"><thead><tr><th>Learning area</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Final</th><th>Remarks</th></tr></thead><tbody>{currentRecord.subjects.map((subject, index) => <tr key={index}><td><input list="f137-subject-options" value={subject.name} placeholder="Select or type a subject" aria-label={`Learning area ${index + 1}`} onChange={(event) => updateSubject(index, "name", event.target.value)} /></td>{["q1", "q2", "q3", "q4", "final"].map((field) => <td key={field}><input inputMode="numeric" value={subject[field]} aria-label={`${subject.name || `Row ${index + 1}`} ${field}`} onChange={(event) => updateSubject(index, field, event.target.value.replace(/[^0-9.]/g, "").slice(0, 5))} /></td>)}<td><input value={subject.remarks} aria-label={`${subject.name || `Row ${index + 1}`} remarks`} onChange={(event) => updateSubject(index, "remarks", event.target.value)} /></td></tr>)}</tbody></table></div>
           <div className="f137-input-grid f137-record-footer"><Input label="General average" value={currentRecord.generalAverage} onChange={(value) => updateRecord("generalAverage", value)} /><Input label="Remedial conducted from" type="date" value={currentRecord.remedialFrom} onChange={(value) => updateRecord("remedialFrom", value)} /><Input label="To" type="date" value={currentRecord.remedialTo} onChange={(value) => updateRecord("remedialTo", value)} /></div>
           <div className="f137-grade-entry-wrap f137-remedial-entry"><table className="f137-grade-entry"><thead><tr><th>Remedial learning area</th><th>Final rating</th><th>Remedial mark</th><th>Recomputed grade</th><th>Remarks</th></tr></thead><tbody>{currentRecord.remedial.map((row, index) => <tr key={index}>{["area", "final", "mark", "recomputed", "remarks"].map((field) => <td key={field}><input value={row[field]} aria-label={`Remedial row ${index + 1} ${field}`} onChange={(event) => updateRemedial(index, field, event.target.value)} /></td>)}</tr>)}</tbody></table></div>
         </>}

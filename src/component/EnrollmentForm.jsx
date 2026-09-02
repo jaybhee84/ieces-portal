@@ -179,15 +179,19 @@ export function EnrollmentForm({ profile }) {
   const hasAssignedGrade = ["0", "1", "2", "3", "4", "5", "6"].includes(
     assignedGrade,
   );
+  const locksAssignedGrade =
+    ["adviser", "grade_chairman"].includes(
+      String(profile?.role || "").toLowerCase(),
+    ) && hasAssignedGrade;
 
   useEffect(() => {
-    if (!hasAssignedGrade) return;
+    if (!locksAssignedGrade) return;
     setFormData((current) =>
       current.grade_level === assignedGrade
         ? current
         : { ...current, grade_level: assignedGrade, adviser_id: "" },
     );
-  }, [assignedGrade, hasAssignedGrade]);
+  }, [assignedGrade, locksAssignedGrade]);
   const [errorMessage, setErrorMessage] = useState("");
 
   // Webcam states & refs
@@ -600,7 +604,7 @@ export function EnrollmentForm({ profile }) {
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
                   Grade Level
                 </label>
-                {hasAssignedGrade ? (
+                {locksAssignedGrade ? (
                   <input
                     type="text"
                     value={assignedGrade === "0" ? "Kindergarten" : `Grade ${assignedGrade}`}

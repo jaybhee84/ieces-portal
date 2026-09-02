@@ -23,13 +23,60 @@ const abbreviatedLegacyName = (value) => {
   ].join(" ");
 };
 
+const middleNameFromLegacyRecord = (learner) => {
+  const legacyName = String(learner?.name || "").trim();
+  const firstName = String(learner?.first_name || "").trim();
+  if (!legacyName.includes(",") || !firstName) return "";
+
+  const legacyGivenNames = legacyName.split(",").slice(1).join(",").trim();
+  if (!legacyGivenNames.toLowerCase().startsWith(firstName.toLowerCase())) {
+    return "";
+  }
+
+  return legacyGivenNames.slice(firstName.length).trim();
+};
+
+const middleNameFromForm137 = (learner) => {
+  const records = learner?.form_137_records;
+  if (!records || typeof records !== "object" || Array.isArray(records)) {
+    return "";
+  }
+
+  const today = new Date();
+  const startYear = today.getMonth() >= 5
+    ? today.getFullYear()
+    : today.getFullYear() - 1;
+  const currentSchoolYear = `${startYear}-${startYear + 1}`;
+  const currentMiddleName = records[currentSchoolYear]?.data?.middleName;
+  if (String(currentMiddleName || "").trim()) return currentMiddleName;
+
+  const latestSchoolYear = Object.keys(records)
+    .filter((key) => /^\d{4}-\d{4}$/.test(key))
+    .sort()
+    .at(-1);
+  return latestSchoolYear
+    ? records[latestSchoolYear]?.data?.middleName || ""
+    : "";
+};
+
+export const learnerMiddleInitial = (learner) => {
+  const middle = String(
+    learner?.middle_name ||
+      learner?.middle_initial ||
+      middleNameFromForm137(learner) ||
+      middleNameFromLegacyRecord(learner) ||
+      "",
+  ).trim();
+  return middle ? middle.charAt(0).toUpperCase() : "";
+};
+
 export const learnerDisplayName = (learner) => {
   if (learner?.family_name || learner?.first_name) {
-    const middle = String(learner.middle_name || "").trim();
+    const middleInitial = learnerMiddleInitial(learner);
     const givenNames = [
       learner.first_name,
-      middle ? `${middle.charAt(0).toUpperCase()}.` : "",
-      learner.suffix,
+      middleInitial ? `${middleInitial}.` : "",
+      learner.suffix || learner.name_suffix,
     ]
       .filter(Boolean)
       .join(" ");

@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { orgAdviserName } from "../lib/orgAdvisers";
 import { loadAdvisoryRoster } from "../lib/advisoryRosterData";
 import {
-  displayBirthdate,
   learnerAge,
   learnerBarangay,
   learnerDisplayName,
   learnerGenderLabel,
   learnerGradeLabel,
+  learnerMiddleInitial,
   learnerNutrition,
   nutritionBadgeClass,
 } from "../lib/learnerRoster";
@@ -33,6 +33,57 @@ const addressWithBarangay = (address, barangay) => {
   return `${current ? `${current}, ` : ""}Brgy. ${barangay}, Isabela City`;
 };
 
+const GUARDIAN_TYPES = [
+  "Father",
+  "Mother",
+  "Grandfather",
+  "Grandmother",
+  "Aunt",
+  "Uncle",
+  "Sibling",
+  "Other Legal Guardian",
+];
+
+const learnerGuardianDraft = (student) => {
+  if (student.guardian_type || student.guardian_contact_name) {
+    const storedType = String(student.guardian_type || "").trim();
+    return {
+      guardian_type: GUARDIAN_TYPES.includes(storedType)
+        ? storedType
+        : "Other Legal Guardian",
+      guardian_contact_name: String(
+        student.guardian_contact_name || "",
+      ).toUpperCase(),
+    };
+  }
+
+  const storedGuardian = String(student.guardian_name || "").trim();
+  if (storedGuardian) {
+    const relationship = storedGuardian.match(/\(([^()]*)\)\s*$/)?.[1]?.trim();
+    return {
+      guardian_type: GUARDIAN_TYPES.includes(relationship)
+        ? relationship
+        : "Other Legal Guardian",
+      guardian_contact_name: storedGuardian
+        .replace(/\s*\([^()]*\)\s*$/, "")
+        .toUpperCase(),
+    };
+  }
+  if (student.father_name) {
+    return {
+      guardian_type: "Father",
+      guardian_contact_name: String(student.father_name).toUpperCase(),
+    };
+  }
+  if (student.mother_name) {
+    return {
+      guardian_type: "Mother",
+      guardian_contact_name: String(student.mother_name).toUpperCase(),
+    };
+  }
+  return { guardian_type: "", guardian_contact_name: "" };
+};
+
 export function AdvisoryClass({ profile }) {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,9 +92,21 @@ export function AdvisoryClass({ profile }) {
   const [demographicDrafts, setDemographicDrafts] = useState({});
   const [dirtyStudentIds, setDirtyStudentIds] = useState([]);
   const [savingDemographics, setSavingDemographics] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const loadedProfileKeyRef = useRef("");
 
   useEffect(() => {
-    fetchStudents();
+    const profileKey = [
+      profile?.id,
+      profile?.first_name,
+      profile?.family_name,
+      profile?.role,
+      profile?.grade_level_assigned,
+      profile?.test_access_scope,
+    ].join(":");
+    const showInitialLoader = loadedProfileKeyRef.current !== profileKey;
+    loadedProfileKeyRef.current = profileKey;
+    fetchStudents(showInitialLoader);
 
     // Realtime sync
     const channel = supabase
@@ -51,7 +114,7 @@ export function AdvisoryClass({ profile }) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "students" },
-        () => fetchStudents()
+        () => fetchStudents(false)
       )
       .subscribe();
 
@@ -60,7 +123,7 @@ export function AdvisoryClass({ profile }) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "org_chart" },
-        () => fetchStudents(),
+        () => fetchStudents(false),
       )
       .subscribe();
 
@@ -74,24 +137,35 @@ export function AdvisoryClass({ profile }) {
           table: "portal_profile",
           filter: `id=eq.${profile?.id}`,
         },
-        () => fetchStudents(),
+        () => fetchStudents(false),
       )
       .subscribe();
+
+    const handleStudentUpdate = () => fetchStudents(false);
+    window.addEventListener("ieces:students-updated", handleStudentUpdate);
 
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(orgChannel);
       supabase.removeChannel(profileChannel);
+      window.removeEventListener("ieces:students-updated", handleStudentUpdate);
     };
-  }, [profile]);
+  }, [
+    profile?.id,
+    profile?.first_name,
+    profile?.family_name,
+    profile?.role,
+    profile?.grade_level_assigned,
+    profile?.test_access_scope,
+  ]);
 
-  const fetchStudents = async () => {
+  const fetchStudents = async (showLoader = false) => {
     if (!profile?.id) {
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    if (showLoader) setLoading(true);
     const result = await loadAdvisoryRoster(profile);
     setOrgAdviser(result.orgAdviser);
     const sortedStudents = [...result.students].sort((left, right) => {
@@ -111,14 +185,21 @@ export function AdvisoryClass({ profile }) {
       Object.fromEntries(
         sortedStudents.map((student) => {
           const barangay = learnerBarangay(student);
+          const guardianDraft = learnerGuardianDraft(student);
           return [
             String(student.id),
             {
               lrn:
                 student.lrn && student.lrn !== "—" ? String(student.lrn) : "",
+              birthdate: student.birthdate
+                ? String(student.birthdate).slice(0, 10)
+                : "",
+              middle_initial: learnerMiddleInitial(student),
               religion: student.religion || "",
               tribe: student.tribe || "",
               barangay: barangay === "—" ? "" : barangay,
+              ...guardianDraft,
+              contact_number: student.contact_number || "",
               reading_category: student.reading_category || "",
             },
           ];
@@ -153,6 +234,25 @@ export function AdvisoryClass({ profile }) {
       setMessage("LRN must contain exactly 12 digits, or be left blank.");
       return;
     }
+    const invalidMiddleInitial = dirtyStudentIds.find((studentId) => {
+      const middleInitial = String(
+        demographicDrafts[studentId]?.middle_initial || "",
+      ).trim();
+      return middleInitial && !/^[A-Z]$/i.test(middleInitial);
+    });
+    if (invalidMiddleInitial) {
+      setMessage("Middle initial must contain one letter, or be left blank.");
+      return;
+    }
+    const incompleteGuardian = dirtyStudentIds.find((studentId) => {
+      const draft = demographicDrafts[studentId] || {};
+      return Boolean(draft.guardian_type) !==
+        Boolean(String(draft.guardian_contact_name || "").trim());
+    });
+    if (incompleteGuardian) {
+      setMessage("Select a guardian type and enter the guardian name, or leave both blank.");
+      return;
+    }
     setSavingDemographics(true);
     setMessage("");
 
@@ -164,18 +264,107 @@ export function AdvisoryClass({ profile }) {
         return {
           id: studentId,
           lrn: draft?.lrn?.trim() || null,
+          birthdate: draft?.birthdate || null,
+          middle_initial: draft?.middle_initial || null,
           religion: draft?.religion || null,
           tribe: draft?.tribe || null,
           address: addressWithBarangay(student?.address, draft?.barangay),
+          guardian_type: draft?.guardian_type || null,
+          guardian_contact_name:
+            draft?.guardian_contact_name?.trim() || null,
+          contact_number: draft?.contact_number?.trim() || null,
           reading_category: draft?.reading_category || null,
         };
       });
 
-    const { error: lrnError } = await supabase.rpc("save_advisory_lrns", {
-      p_updates: updates.map(({ id, lrn }) => ({ id, lrn })),
-    });
-    if (lrnError) {
-      setMessage(`Failed to save LRN: ${lrnError.message}`);
+    const lrnUpdates = updates
+      .filter(({ id, lrn }) => {
+        const student = students.find(
+          (candidate) => String(candidate.id) === String(id),
+        );
+        const savedLrn = student?.lrn && student.lrn !== "—"
+          ? String(student.lrn).trim()
+          : "";
+        return (lrn || "") !== savedLrn;
+      })
+      .map(({ id, lrn }) => ({ id, lrn }));
+
+    const birthdateUpdates = updates
+      .filter(({ id, birthdate }) => {
+        const student = students.find(
+          (candidate) => String(candidate.id) === String(id),
+        );
+        const savedBirthdate = student?.birthdate
+          ? String(student.birthdate).slice(0, 10)
+          : "";
+        return (birthdate || "") !== savedBirthdate;
+      })
+      .map(({ id, birthdate }) => ({ id, birthdate }));
+
+    const middleInitialUpdates = updates
+      .filter(({ id, middle_initial }) => {
+        const student = students.find(
+          (candidate) => String(candidate.id) === String(id),
+        );
+        return (middle_initial || "") !== learnerMiddleInitial(student);
+      })
+      .map(({ id, middle_initial }) => ({ id, middle_initial }));
+
+    if (lrnUpdates.length) {
+      const { error: lrnError } = await supabase.rpc("save_advisory_lrns", {
+        p_updates: lrnUpdates,
+      });
+      if (lrnError) {
+        setMessage(`Failed to save LRN: ${lrnError.message}`);
+        setSavingDemographics(false);
+        return;
+      }
+    }
+
+    if (birthdateUpdates.length) {
+      const { error: birthdateError } = await supabase.rpc(
+        "save_advisory_birthdates",
+        { p_updates: birthdateUpdates },
+      );
+      if (birthdateError) {
+        setMessage(`Failed to save birthdate: ${birthdateError.message}`);
+        setSavingDemographics(false);
+        return;
+      }
+    }
+
+    if (middleInitialUpdates.length) {
+      const { error: middleInitialError } = await supabase.rpc(
+        "save_advisory_middle_initials",
+        { p_updates: middleInitialUpdates },
+      );
+      if (middleInitialError) {
+        setMessage(`Failed to save middle initial: ${middleInitialError.message}`);
+        setSavingDemographics(false);
+        return;
+      }
+    }
+
+    const { error: contactError } = await supabase.rpc(
+      "save_advisory_contacts",
+      {
+        p_updates: updates.map(
+          ({
+            id,
+            guardian_type,
+            guardian_contact_name,
+            contact_number,
+          }) => ({
+            id,
+            guardian_type,
+            guardian_contact_name,
+            contact_number,
+          }),
+        ),
+      },
+    );
+    if (contactError) {
+      setMessage(`Failed to save parent/guardian details: ${contactError.message}`);
       setSavingDemographics(false);
       return;
     }
@@ -188,9 +377,20 @@ export function AdvisoryClass({ profile }) {
     if (error) {
       setMessage(`Failed to save learner data: ${error.message}`);
     } else {
-      setMessage(`${savedCount} learner record${savedCount === 1 ? "" : "s"} saved to Supabase.`);
+      setMessage("");
       setDirtyStudentIds([]);
-      await fetchStudents();
+      window.dispatchEvent(
+        new CustomEvent("ieces:students-updated", {
+          detail: {
+            updates: updates.map(({ middle_initial, ...update }) => ({
+              ...update,
+              middle_name: middle_initial,
+            })),
+          },
+        }),
+      );
+      await fetchStudents(false);
+      setShowSuccessModal(true);
     }
     setSavingDemographics(false);
   };
@@ -216,10 +416,58 @@ export function AdvisoryClass({ profile }) {
 
   return (
     <div className="dash-card">
+      {showSuccessModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="advisory-save-success-title"
+        >
+          <div className="bg-white rounded-2xl p-6 md:p-8 max-w-sm w-full text-center shadow-2xl border border-slate-100">
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg
+                className="w-8 h-8"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2.5"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            </div>
+            <h3
+              id="advisory-save-success-title"
+              className="text-xl font-bold text-slate-800 mb-2"
+            >
+              Successfully Saved!
+            </h3>
+            <p className="text-slate-600 text-sm mb-6">
+              The advisory class changes have been saved successfully.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowSuccessModal(false)}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-xl shadow transition-colors text-sm"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="dash-card-header">
         <h2>
           Advisory Class —{" "}
-          {orgAdviser ? orgAdviserName(orgAdviser) : "Not linked in Org Chart"}
+          {profile?.test_access_scope === "grade"
+            ? `${String(profile.grade_level_assigned) === "0" ? "All Kinder Classes" : `All Grade ${profile.grade_level_assigned} Classes`}`
+            : orgAdviser
+              ? orgAdviserName(orgAdviser)
+              : "Not linked in Org Chart"}
         </h2>
         <p>
           Total: {students.length} Learners &nbsp;|&nbsp; Male: {maleCount}{" "}
@@ -296,32 +544,39 @@ export function AdvisoryClass({ profile }) {
         </div>
       ) : (
         <div className="dash-table-wrapper advisory-roster-scroll">
-          <table className="dash-table" style={{ minWidth: "1420px" }}>
+          <table className="dash-table" style={{ minWidth: "2040px" }}>
             <thead>
               <tr>
-                <th className="sticky-roster-no">No.</th>
-                <th className="sticky-roster-name">
+                <th rowSpan="2" className="sticky-roster-no">No.</th>
+                <th rowSpan="2" className="sticky-roster-name">
                   Learner Name
                 </th>
-                <th className="sticky-roster-photo">Photo</th>
-                <th>LRN</th>
-                <th>Grade Level</th>
-                <th>Gender</th>
-                <th>Birthdate</th>
-                <th>Age</th>
-                <th>Religion</th>
-                <th>Tribe</th>
-                <th>Barangay</th>
-                <th>BMI Status</th>
-                <th>HFA Status</th>
-                <th>Reading Level</th>
+                <th rowSpan="2" className="sticky-roster-photo">Photo</th>
+                <th rowSpan="2">Middle Initial</th>
+                <th rowSpan="2">LRN</th>
+                <th rowSpan="2">Grade Level</th>
+                <th rowSpan="2">Gender</th>
+                <th rowSpan="2">Birthdate</th>
+                <th rowSpan="2">Age</th>
+                <th rowSpan="2">Religion</th>
+                <th rowSpan="2">Tribe</th>
+                <th rowSpan="2">Barangay</th>
+                <th colSpan="2">Parents / Guardian</th>
+                <th rowSpan="2">Contact Number</th>
+                <th rowSpan="2">BMI Status</th>
+                <th rowSpan="2">HFA Status</th>
+                <th rowSpan="2">Reading Level</th>
+              </tr>
+              <tr className="advisory-subheader-row">
+                <th>Type</th>
+                <th>Name</th>
               </tr>
             </thead>
             <tbody>
               {students.length === 0 ? (
                 <tr>
                   <td
-                    colSpan="14"
+                    colSpan="18"
                     style={{ textAlign: "center", padding: "24px", color: "#999" }}
                   >
                     No learners assigned to your advisory class yet.
@@ -332,19 +587,23 @@ export function AdvisoryClass({ profile }) {
                   const photo = st.photo_url || st.photo;
                   const nutrition = learnerNutrition(st);
                   const draft = demographicDrafts[String(st.id)] || {};
+                  const displayName = learnerDisplayName({
+                    ...st,
+                    middle_name: draft.middle_initial ?? st.middle_name,
+                  });
                   return (
                     <tr key={st.id}>
                       <td className="sticky-roster-no font-bold text-center text-[#7b1a1a]">
                         {idx + 1}
                       </td>
                       <td className="sticky-roster-name font-bold">
-                        {learnerDisplayName(st)}
+                        {displayName}
                       </td>
                       <td className="sticky-roster-photo">
                         {photo ? (
                           <img
                             src={photo}
-                            alt={`${learnerDisplayName(st)} profile`}
+                            alt={`${displayName} profile`}
                             className="w-10 h-10 rounded-full object-cover border border-slate-200"
                           />
                         ) : (
@@ -352,6 +611,28 @@ export function AdvisoryClass({ profile }) {
                             👤
                           </div>
                         )}
+                      </td>
+                      <td className="min-w-[105px]">
+                        <input
+                          type="text"
+                          inputMode="text"
+                          maxLength={1}
+                          value={draft.middle_initial || ""}
+                          onChange={(event) =>
+                            updateDemographicDraft(
+                              st.id,
+                              "middle_initial",
+                              event.target.value
+                                .replace(/[^a-z]/gi, "")
+                                .slice(0, 1)
+                                .toUpperCase(),
+                            )
+                          }
+                          disabled={savingDemographics}
+                          placeholder="M.I."
+                          aria-label={`Middle initial for ${displayName}`}
+                          className="advisory-contact-input min-w-[70px] text-center uppercase"
+                        />
                       </td>
                       <td>
                         <input
@@ -374,14 +655,28 @@ export function AdvisoryClass({ profile }) {
                           disabled={savingDemographics}
                           autoComplete="off"
                           placeholder="12-digit LRN"
-                          aria-label={`LRN for ${learnerDisplayName(st)}`}
+                          aria-label={`LRN for ${displayName}`}
                           className="advisory-lrn-input min-w-[130px] font-mono"
                         />
                       </td>
                       <td className="whitespace-nowrap font-semibold">{learnerGradeLabel(st)}</td>
                       <td className="font-semibold">{learnerGenderLabel(st)}</td>
-                      <td className="whitespace-nowrap">{displayBirthdate(st.birthdate)}</td>
-                      <td className="text-center">{learnerAge(st)}</td>
+                      <td>
+                        <input
+                          type="date"
+                          value={draft.birthdate || ""}
+                          max={new Date().toISOString().slice(0, 10)}
+                          onChange={(event) =>
+                            updateDemographicDraft(st.id, "birthdate", event.target.value)
+                          }
+                          disabled={savingDemographics}
+                          aria-label={`Birthdate for ${displayName}`}
+                          className="advisory-birthdate-input"
+                        />
+                      </td>
+                      <td className="text-center">
+                        {learnerAge({ ...st, birthdate: draft.birthdate })}
+                      </td>
                       <td>
                         <select
                           value={draft.religion || ""}
@@ -417,6 +712,75 @@ export function AdvisoryClass({ profile }) {
                             <option key={option} value={option}>{option}</option>
                           ))}
                         </select>
+                      </td>
+                      <td className="min-w-[165px]">
+                        <select
+                          value={draft.guardian_type || ""}
+                          onChange={(event) => {
+                            const guardianType = event.target.value;
+                            updateDemographicDraft(
+                              st.id,
+                              "guardian_type",
+                              guardianType,
+                            );
+                            if (!guardianType) {
+                              updateDemographicDraft(
+                                st.id,
+                                "guardian_contact_name",
+                                "",
+                              );
+                            }
+                          }}
+                          disabled={savingDemographics}
+                          aria-label={`Guardian type for ${displayName}`}
+                          className="table-select w-full min-w-[155px]"
+                        >
+                          <option value="">Select type</option>
+                          {GUARDIAN_TYPES.map((type) => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="min-w-[220px]">
+                        <input
+                          type="text"
+                          value={draft.guardian_contact_name || ""}
+                          onChange={(event) =>
+                            updateDemographicDraft(
+                              st.id,
+                              "guardian_contact_name",
+                              event.target.value.toUpperCase(),
+                            )
+                          }
+                          disabled={
+                            savingDemographics || !draft.guardian_type
+                          }
+                          placeholder={
+                            draft.guardian_type
+                              ? "Guardian name"
+                              : "Select type first"
+                          }
+                          aria-label={`Guardian name for ${displayName}`}
+                          className="advisory-contact-input min-w-[210px]"
+                        />
+                      </td>
+                      <td className="min-w-[145px]">
+                        <input
+                          type="tel"
+                          value={draft.contact_number || ""}
+                          onChange={(event) =>
+                            updateDemographicDraft(
+                              st.id,
+                              "contact_number",
+                              event.target.value,
+                            )
+                          }
+                          disabled={savingDemographics}
+                          placeholder="Contact number"
+                          autoComplete="tel"
+                          aria-label={`Contact number for ${displayName}`}
+                          className="advisory-contact-input min-w-[135px]"
+                        />
                       </td>
                       <td>
                         <span className={`inline-block px-2 py-1 rounded-full border text-[10px] font-bold whitespace-nowrap ${nutritionBadgeClass(nutrition.bmi)}`}>

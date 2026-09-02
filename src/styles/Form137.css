@@ -21,12 +21,14 @@
 .f137-record-selector button { display: grid; place-items: center; width: 34px; height: 32px; background: #fff; border: 1px solid #d8c9c3; border-radius: 5px; cursor: pointer; }
 .f137-record-selector button:disabled { opacity: .4; cursor: default; }
 .f137-record-fields { margin-bottom: 14px; }
+.f137-subject-help { margin: 0 0 7px; color: #735f5f; font-size: .72rem; }
 .f137-grade-entry-wrap { overflow-x: auto; border: 1px solid #ded3cf; }
 .f137-grade-entry { width: 100%; min-width: 760px; border-collapse: collapse; font-size: .75rem; }
 .f137-grade-entry th { background: #f5f1ef; color: #5e4848; padding: 8px; text-align: center; }
 .f137-grade-entry td { border-top: 1px solid #eee5e1; padding: 3px; }
 .f137-grade-entry input { width: 100%; min-width: 42px; box-sizing: border-box; border: 1px solid transparent; background: transparent; padding: 6px; text-align: center; }
 .f137-grade-entry td:first-child input { min-width: 205px; text-align: left; font-weight: 650; }
+.f137-grade-entry td:first-child input::placeholder { color: #9a8989; font-weight: 400; }
 .f137-record-footer { margin-top: 14px; }
 .f137-remedial-entry { margin-top: 14px; }
 .f137-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 26px 0 10px; }

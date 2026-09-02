@@ -88,6 +88,49 @@
     background: rgba(255, 255, 255, 0.25);
 }
 
+.dash-switch-user-btn {
+    background: #f5c518;
+    color: #4a0b0b;
+    border: 0;
+    padding: 7px 12px;
+    border-radius: 8px;
+    font-size: 0.74rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.admin-test-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(38, 8, 8, .72);
+}
+
+.admin-test-card {
+    width: min(460px, 100%);
+    box-sizing: border-box;
+    padding: 26px;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .35);
+}
+
+.admin-test-card h2 { margin: 0; color: #7b1a1a; font-size: 1.25rem; }
+.admin-test-card > p { margin: 7px 0 20px; color: #735f5f; font-size: .82rem; line-height: 1.45; }
+.admin-test-card label { display: flex; flex-direction: column; gap: 6px; margin-top: 13px; }
+.admin-test-card label span { color: #684f4f; font-size: .68rem; font-weight: 800; text-transform: uppercase; }
+.admin-test-card select { width: 100%; min-height: 40px; box-sizing: border-box; border: 1px solid #d8c9c3; border-radius: 6px; padding: 8px 10px; background: #fff; color: #271919; }
+.admin-test-card select:focus { outline: 2px solid rgba(123, 26, 26, .18); border-color: #7b1a1a; }
+.admin-test-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.admin-test-actions button { min-height: 38px; padding: 8px 13px; border-radius: 6px; font-weight: 750; cursor: pointer; }
+.admin-test-actions button:disabled { opacity: .45; cursor: default; }
+.admin-test-cancel { border: 1px solid #d8c9c3; background: #fff; color: #5b2020; }
+.admin-test-continue { border: 1px solid #7b1a1a; background: #7b1a1a; color: #fff; }
+.admin-test-card small { display: block; margin-top: 14px; color: #887777; font-size: .68rem; }
+
 /* BODY AREA */
 .dash-body {
     display: flex;
@@ -352,7 +395,9 @@
     font-size: 0.78rem;
 }
 
-.advisory-lrn-input {
+.advisory-lrn-input,
+.advisory-birthdate-input,
+.advisory-contact-input {
     position: relative;
     z-index: 2;
     width: 100%;
@@ -365,16 +410,28 @@
     user-select: text;
 }
 
-.advisory-lrn-input:focus {
+.advisory-lrn-input:focus,
+.advisory-birthdate-input:focus,
+.advisory-contact-input:focus {
     outline: none;
     border-color: #7b1a1a;
     box-shadow: 0 0 0 2px rgba(123, 26, 26, 0.14);
 }
 
-.advisory-lrn-input:disabled {
+.advisory-lrn-input:disabled,
+.advisory-birthdate-input:disabled,
+.advisory-contact-input:disabled {
     background: #f1f5f9;
     cursor: wait;
 }
+
+.advisory-roster-scroll .dash-table .advisory-subheader-row th {
+    top: 39px;
+    z-index: 16;
+}
+
+.advisory-birthdate-input { min-width: 132px; }
+.advisory-contact-input { font-size: 0.75rem; }
 
 .table-select.highlight {
     background-color: #fffbeb;

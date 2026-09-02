@@ -70,6 +70,29 @@ export const isOrgAdviser = (person) => {
   );
 };
 
+export const isOrgTeachingStaff = (person) =>
+  normalizedText(person?.category) === "TEACHING";
+
+export const orgTeachingRole = (person) => {
+  if (!isOrgTeachingStaff(person)) return null;
+  if (Boolean(person?.is_grade_chairman)) return "grade_chairman";
+  return normalizedText(person?.teaching_type) === "ADVISER"
+    ? "adviser"
+    : "subject_teacher";
+};
+
+export const findOrgTeacherForProfile = (profile, orgRows) => {
+  if (!profile) return null;
+  const targetName = profileName(profile);
+  return (
+    (orgRows || []).find(
+      (person) =>
+        isOrgTeachingStaff(person) &&
+        namesLikelyMatch(targetName, orgAdviserName(person)),
+    ) || null
+  );
+};
+
 export const findOrgAdviserForProfile = (profile, orgAdvisers) => {
   if (!profile) return null;
   const targetGrade = adviserGradeKey(profile.grade_level_assigned);

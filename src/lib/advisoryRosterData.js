@@ -49,6 +49,21 @@ export const loadAdvisoryRoster = async (profile) => {
     return { students: [], orgAdviser, orgAdvisers, error };
   }
 
+  if (profile.test_access_scope === "grade") {
+    const selectedGrade = adviserGradeKey(profile.grade_level_assigned);
+    return {
+      students: schoolLearners.filter(
+        (learner) =>
+          adviserGradeKey(
+            learner.grade_level || learner.grade || learner.gradeLevel || learner.section,
+          ) === selectedGrade,
+      ),
+      orgAdviser: null,
+      orgAdvisers,
+      error: null,
+    };
+  }
+
   if (!orgAdviser) {
     return { students: [], orgAdviser: null, orgAdvisers, error: null };
   }

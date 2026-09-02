@@ -33,6 +33,7 @@ type OrgChartPerson = {
   first_name: string | null;
   family_name: string | null;
   category: string | null;
+  teaching_type: string | null;
   grade_level: string | null;
   is_grade_chairman: boolean | null;
 };
@@ -172,7 +173,7 @@ Deno.serve(async (request: Request) => {
     const { data: orgRows, error: orgError } = await supabaseAdmin
       .from("org_chart")
       .select(
-        "first_name, family_name, category, grade_level, is_grade_chairman",
+        "first_name, family_name, category, teaching_type, grade_level, is_grade_chairman",
       );
 
     if (orgError) {
@@ -197,8 +198,12 @@ Deno.serve(async (request: Request) => {
 
     const role = orgPerson.is_grade_chairman
       ? "grade_chairman"
-      : "adviser";
-    const gradeLevelAssigned = gradeNumber(orgPerson.grade_level);
+      : exactName(orgPerson.teaching_type) === "ADVISER"
+        ? "adviser"
+        : "subject_teacher";
+    const gradeLevelAssigned = role === "subject_teacher"
+      ? null
+      : gradeNumber(orgPerson.grade_level);
 
     const authEmail = await portalAuthEmail(normalizedEmail);
     const existingAuthUser = await findAuthUserByEmail(authEmail);
