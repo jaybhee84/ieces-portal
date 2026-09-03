@@ -23,6 +23,9 @@ const getCurrentSchoolYear = () => {
 };
 
 const CURRENT_SCHOOL_YEAR = getCurrentSchoolYear();
+const CURRENT_PRINCIPAL = "JOCELYN R. BUENAVENTURA";
+const currentPrincipalName = () =>
+  localStorage.getItem("autoid_principal_name") || CURRENT_PRINCIPAL;
 const SCHOLASTIC_RECORD_SLOTS = 8;
 const ELEMENTARY_GRADES = ["1", "2", "3", "4", "5", "6"];
 
@@ -168,6 +171,67 @@ const normalizeFormData = (savedData, learnerId) => {
   };
 };
 
+const fillFormFromLearner = (savedData, learner, profile) => {
+  const normalized = normalizeFormData(savedData, String(learner.id));
+  const names = separateMiddleInitial(learner.first_name, learner.middle_name);
+  const rawLrn = String(learnerLrn(learner));
+  const gradeNumber = Number(
+    String(learner.grade_level || learner.grade || "").match(/\d+/)?.[0],
+  );
+  const adviserName = String(
+    learner.adviser_name ||
+      [profile?.first_name, profile?.family_name].filter(Boolean).join(" "),
+  ).toUpperCase();
+  const currentGradeIndex = normalized.records.findIndex(
+    (record) => Number(String(record.grade).match(/\d+/)?.[0]) === gradeNumber,
+  );
+  const targetRecordIndex = currentGradeIndex >= 0
+    ? currentGradeIndex
+    : gradeNumber >= 1 && gradeNumber <= 6
+      ? gradeNumber - 1
+      : -1;
+
+  return {
+    ...normalized,
+    // These are canonical students columns shared with Enrollment/Advisory.
+    lastName: learner.family_name || normalized.lastName,
+    firstName: names.firstName || normalized.firstName,
+    middleName: names.middleName || normalized.middleName,
+    extension: learner.suffix || learner.name_suffix || normalized.extension,
+    lrn: /^\d{12,13}$/.test(rawLrn) ? rawLrn : normalized.lrn,
+    birthdate: learner.birthdate
+      ? String(learner.birthdate).slice(0, 10)
+      : normalized.birthdate,
+    sex: learnerGenderLabel(learner).toUpperCase() || normalized.sex,
+    enrollmentSchool:
+      learner.school_name || normalized.enrollmentSchool || SCHOOL_DEFAULTS.school,
+    enrollmentSchoolId:
+      String(learner.school_id || normalized.enrollmentSchoolId || SCHOOL_DEFAULTS.schoolId),
+    enrollmentAddress: learner.address || normalized.enrollmentAddress,
+    records: normalized.records.map((record, index) => {
+      if (index !== targetRecordIndex) return record;
+      return {
+        ...record,
+        school: learner.school_name || record.school || SCHOOL_DEFAULTS.school,
+        schoolId: String(learner.school_id || record.schoolId || SCHOOL_DEFAULTS.schoolId),
+        section: learner.section || record.section || "",
+        schoolYear: learner.school_year || record.schoolYear || CURRENT_SCHOOL_YEAR,
+        adviser: adviserName || record.adviser,
+      };
+    }),
+    certifications: normalized.certifications.map((certification) => ({
+      ...certification,
+      schoolName:
+        learner.school_name || certification.schoolName || SCHOOL_DEFAULTS.school,
+      schoolId: String(
+        learner.school_id || certification.schoolId || SCHOOL_DEFAULTS.schoolId,
+      ),
+      division: certification.division || SCHOOL_DEFAULTS.division,
+      principal: certification.principal || currentPrincipalName().toUpperCase(),
+    })),
+  };
+};
+
 const Input = ({ label, value, onChange, type = "text", className = "" }) => (
   <label className={`f137-field ${className}`}>
     <span>{label}</span>
@@ -300,7 +364,7 @@ export function Form137({ profile }) {
       { p_student_id: learnerId },
     );
     if (!loadError && savedRecord?.data) {
-      setForm(normalizeFormData(savedRecord.data, learnerId));
+      setForm(fillFormFromLearner(savedRecord.data, learner, profile));
       setMessage("The learner's cumulative Form 137 record was loaded.");
       return;
     }
@@ -316,7 +380,7 @@ export function Form137({ profile }) {
         .filter(([, entry]) => entry?.data)
         .sort(([left], [right]) => right.localeCompare(left))[0];
       if (latestEntry) {
-        setForm(normalizeFormData(latestEntry[1].data, learnerId));
+        setForm(fillFormFromLearner(latestEntry[1].data, learner, profile));
         setMessage(`Cumulative Form 137 carried forward from SY ${latestEntry[0]}.`);
         return;
       }
@@ -328,40 +392,14 @@ export function Form137({ profile }) {
     if (saved) {
       try {
         const draft = JSON.parse(saved);
-        setForm(normalizeFormData(draft, learnerId));
+        setForm(fillFormFromLearner(draft, learner, profile));
         setMessage(loadError
           ? "Local backup loaded. Deploy the Form 137 SQL migration to enable database saving."
           : `Local backup for SY ${CURRENT_SCHOOL_YEAR} loaded.`);
         return;
       } catch { /* Use roster values below. */ }
     }
-    const names = separateMiddleInitial(learner.first_name, learner.middle_name);
-    const gradeNumber = Number(String(learner.grade_level || learner.grade || "").match(/\d+/)?.[0]);
-    const adviserName = [profile?.first_name, profile?.family_name]
-      .filter(Boolean)
-      .join(" ")
-      .toUpperCase();
-    const freshForm = initialForm();
-    setForm({
-      ...freshForm,
-      learnerId,
-      lastName: learner.family_name || "",
-      ...names,
-      extension: learner.suffix || "",
-      lrn: /^\d{12}$/.test(String(learnerLrn(learner))) ? String(learnerLrn(learner)) : "",
-      birthdate: learner.birthdate ? String(learner.birthdate).slice(0, 10) : "",
-      sex: learnerGenderLabel(learner).toUpperCase(),
-      records: freshForm.records.map((record, index) => ({
-        ...record,
-        adviser: adviserName,
-        ...(index === gradeNumber - 1
-          ? {
-              schoolYear: CURRENT_SCHOOL_YEAR,
-              section: learner.section || "",
-            }
-          : {}),
-      })),
-    });
+    setForm(fillFormFromLearner(initialForm(), learner, profile));
     setMessage(loadError
       ? "New form started. Deploy the Form 137 SQL migration to enable database saving."
       : `New Form 137 started for SY ${CURRENT_SCHOOL_YEAR}.`);
@@ -452,7 +490,7 @@ export function Form137({ profile }) {
         {editorTab === "Learner" && <div className="f137-input-grid">
           <label className="f137-field f137-wide"><span>Advisory learner</span><select value={form.learnerId} disabled={loading} onChange={(event) => selectLearner(event.target.value)}><option value="">{loading ? "Loading learners..." : "Select a learner"}</option>{students.map((student) => <option key={student.id} value={String(student.id)}>{learnerDisplayName(student)} - {learnerLrn(student)}</option>)}</select></label>
           <Input label="Last name" value={form.lastName} onChange={(value) => updateField("lastName", value.toUpperCase())} /><Input label="First name" value={form.firstName} onChange={(value) => updateField("firstName", value.toUpperCase())} /><Input label="Middle name" value={form.middleName} onChange={(value) => updateField("middleName", value.toUpperCase())} /><Input label="Name extension" value={form.extension} onChange={(value) => updateField("extension", value.toUpperCase())} />
-          <Input label="LRN" value={form.lrn} onChange={(value) => updateField("lrn", value.replace(/\D/g, "").slice(0, 12))} /><Input label="Birthdate" type="date" value={form.birthdate} onChange={(value) => updateField("birthdate", value)} />
+          <Input label="LRN" value={form.lrn} onChange={(value) => updateField("lrn", value.replace(/\D/g, "").slice(0, 13))} /><Input label="Birthdate" type="date" value={form.birthdate} onChange={(value) => updateField("birthdate", value)} />
           <label className="f137-field"><span>Sex</span><select value={form.sex} onChange={(event) => updateField("sex", event.target.value)}><option value="">Select</option><option>MALE</option><option>FEMALE</option></select></label>
         </div>}
         {editorTab === "Enrollment" && <div className="f137-input-grid">

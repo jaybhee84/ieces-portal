@@ -129,6 +129,18 @@ begin
 
   update public.students
   set
+    family_name = upper(nullif(trim(p_form_data ->> 'lastName'), '')),
+    first_name = upper(nullif(trim(p_form_data ->> 'firstName'), '')),
+    middle_name = upper(nullif(trim(p_form_data ->> 'middleName'), '')),
+    name = nullif(trim(concat_ws(
+      ', ',
+      upper(nullif(trim(p_form_data ->> 'lastName'), '')),
+      nullif(trim(concat_ws(
+        ' ',
+        upper(nullif(trim(p_form_data ->> 'firstName'), '')),
+        upper(nullif(trim(p_form_data ->> 'middleName'), ''))
+      )), '')
+    )), ''),
     form_137_records = jsonb_set(
       coalesce(form_137_records, '{}'::jsonb),
       array[current_school_year],

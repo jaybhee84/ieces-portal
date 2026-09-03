@@ -71,6 +71,80 @@ function formatAutoIdName(learner) {
   }
   return rosterName.toUpperCase();
 }
+// Father takes priority, then mother, then whatever guardian contact was
+// recorded in Advisory Class — matching the same order the school uses on
+// printed enrollment records.
+function formatParentNameForId(value) {
+  const raw = String(value || "").trim();
+  if (!raw.includes(",")) return raw.toUpperCase();
+  const [family, first, ...middle] = raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return [first, ...middle, family].filter(Boolean).join(" ").toUpperCase();
+}
+
+function resolveGuardianDisplay(learnerRaw) {
+  const father = String(learnerRaw.father_name || "").trim();
+  const mother = String(learnerRaw.mother_name || "").trim();
+  const selectedRelation = String(learnerRaw.guardian_type || "").toUpperCase();
+  const legacyContact = String(learnerRaw.contact_number || "").trim();
+  const fatherContact =
+    learnerRaw.father_contact_number ||
+    (selectedRelation === "FATHER" ? legacyContact : "");
+  const motherContact =
+    learnerRaw.mother_contact_number ||
+    (selectedRelation === "MOTHER" ? legacyContact : "");
+  const parents = [
+    father && father.toUpperCase() !== "DECEASED"
+      ? {
+          name: formatParentNameForId(father),
+          relation: "FATHER",
+          contact: fatherContact || "N/A",
+        }
+      : null,
+    mother && mother.toUpperCase() !== "DECEASED"
+      ? {
+          name: formatParentNameForId(mother),
+          relation: "MOTHER",
+          contact: motherContact || "N/A",
+        }
+      : null,
+  ].filter(Boolean);
+  if (parents.length) {
+    const parentContacts = parents.map((parent) => parent.contact);
+    // Older rows have one shared contact. If its relationship was not saved,
+    // show that known number once instead of presenting misleading N/A values.
+    const contact = parentContacts.every((value) => value === "N/A") && legacyContact
+      ? legacyContact
+      : parentContacts.join(" | ");
+    return {
+      name: parents.map((parent) => parent.name).join(" | "),
+      relation: parents.map((parent) => parent.relation).join(" | "),
+      contact,
+    };
+  }
+  const guardianContact = String(
+    learnerRaw.guardian_contact_name || learnerRaw.guardian_name || "",
+  ).trim();
+  if (guardianContact) {
+    return {
+      name: guardianContact.toUpperCase(),
+      relation: (
+        learnerRaw.guardian_type ||
+        learnerRaw.guardian_relationship ||
+        "PARENT/GUARDIAN"
+      ).toUpperCase(),
+      contact:
+        learnerRaw.guardian_contact_number || learnerRaw.contact_number || "N/A",
+    };
+  }
+  return {
+    name: "N/A",
+    relation: "PARENT/GUARDIAN",
+    contact: learnerRaw.contact_number || "N/A",
+  };
+}
 function formatGradeSection(rawGrade, rawSection) {
   const gradeKey = adviserGradeKey(rawGrade);
   const gradeNum = /^[1-6]$/.test(gradeKey) ? Number(gradeKey) : null;
@@ -613,19 +687,11 @@ export function AutoId({ profile }) {
       learnerRaw.section,
     );
     const address = learnerRaw.address || "Isabela City, Basilan";
-    const guardName = (
-      learnerRaw.guardian_contact_name ||
-      learnerRaw.guardian_name ||
-      learnerRaw.father_name ||
-      learnerRaw.mother_name ||
-      "N/A"
-    ).toUpperCase();
-    const guardRel = (
-      learnerRaw.guardian_type ||
-      learnerRaw.guardian_relationship ||
-      "PARENT/GUARDIAN"
-    ).toUpperCase();
-    const contactNum = learnerRaw.contact_number || "N/A";
+    const {
+      name: guardName,
+      relation: guardRel,
+      contact: contactNum,
+    } = resolveGuardianDisplay(learnerRaw);
     const lrn = learnerRaw.lrn || "";
     const photoUrl = learnerRaw.photo_url || null;
     const qrPayload = `ENROLLED & VALIDATED\nLRN:${lrn}\n${fullName}\n${gradeSectionStr}\n${validity}\nIECES`;
@@ -687,19 +753,8 @@ export function AutoId({ profile }) {
     const gsSec = formatGradeSection(effectiveLearnerGrade, learnerRaw.section);
     const gradeSectionFs = `${Math.round(gradeSectionFontSize(effectiveLearnerGrade, learnerRaw.section) * PRINT_SCALE * 100) / 100}px`;
     const addr = learnerRaw.address || "Isabela City, Basilan";
-    const gname = (
-      learnerRaw.guardian_contact_name ||
-      learnerRaw.guardian_name ||
-      learnerRaw.father_name ||
-      learnerRaw.mother_name ||
-      "N/A"
-    ).toUpperCase();
-    const grel = (
-      learnerRaw.guardian_type ||
-      learnerRaw.guardian_relationship ||
-      "PARENT/GUARDIAN"
-    ).toUpperCase();
-    const cnum = learnerRaw.contact_number || "N/A";
+    const { name: gname, relation: grel, contact: cnum } =
+      resolveGuardianDisplay(learnerRaw);
     const lrnNum = learnerRaw.lrn || "";
     const photo = learnerRaw.photo_url || null;
     const nameFs = `${Math.round(learnerNameFontSize(fn) * PRINT_SCALE * 100) / 100}px`;

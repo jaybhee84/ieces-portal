@@ -16,7 +16,7 @@ const ISABELA_CITY_BARANGAYS = [
   "Carbon",
   "Diki",
   "Doña Ramona T. Alano",
-  "Eastside",
+  "Isabela Eastside",
   "Isabela Proper",
   "Kapatagan Grande",
   "Kapayawan",
@@ -88,14 +88,10 @@ const IECES_SCHOOL_NAME = "Isabela East Central Elementary School";
 
 const cameraPreferenceScore = (device) => {
   const label = String(device?.label || "").toLowerCase();
-  if (
-    /nc beauty|virtual|obs|snap camera|manycam|xsplit|ndi camera/.test(label)
-  ) {
+  if (/nc beauty|virtual|obs|snap camera|manycam|xsplit|ndi camera/.test(label)) {
     return -100;
   }
-  if (
-    /usb|webcam|logitech|brio|c920|c922|external|hd pro|lifecam/.test(label)
-  ) {
+  if (/usb|webcam|logitech|brio|c920|c922|external|hd pro|lifecam/.test(label)) {
     return 100;
   }
   if (/integrated|built-in|facetime|front camera/.test(label)) return 10;
@@ -103,13 +99,27 @@ const cameraPreferenceScore = (device) => {
 };
 
 const parseStoredName = (value) => {
-  const parts = String(value || "")
-    .split(",")
-    .map((part) => part.trim());
+  const cleaned = String(value || "").trim();
+  const parts = cleaned.split(",").map((part) => part.trim()).filter(Boolean);
+  if (!cleaned) return { family_name: "", first_name: "", middle_name: "" };
+
+  // Canonical Enrollment value: FAMILY, FIRST, MIDDLE. Also accept old
+  // "FAMILY, FIRST MIDDLE" and Advisory's natural "FIRST MIDDLE FAMILY".
+  if (parts.length >= 2) {
+    const givenParts = parts.length === 2 ? parts[1].split(/\s+/) : [];
+    return {
+      family_name: parts[0] || "",
+      first_name: parts.length === 2 ? givenParts[0] || "" : parts[1] || "",
+      middle_name:
+        parts.length === 2 ? givenParts.slice(1).join(" ") : parts.slice(2).join(" "),
+    };
+  }
+
+  const words = cleaned.split(/\s+/).filter(Boolean);
   return {
-    family_name: parts[0] || "",
-    first_name: parts[1] || "",
-    middle_name: parts.slice(2).join(" ") || "",
+    family_name: words.length > 1 ? words.at(-1) : words[0] || "",
+    first_name: words.length > 1 ? words[0] : "",
+    middle_name: words.length > 2 ? words.slice(1, -1).join(" ") : "",
   };
 };
 
@@ -125,12 +135,15 @@ export function EnrollmentForm({ profile }) {
   const [adviserLoadError, setAdviserLoadError] = useState("");
   const [existingLearnerId, setExistingLearnerId] = useState(null);
   const [lrnLookupMessage, setLrnLookupMessage] = useState("");
+  const [lrnDuplicateCount, setLrnDuplicateCount] = useState(0);
+  const [advisoryGuardianHint, setAdvisoryGuardianHint] = useState(null);
 
   // Parent details & status flags
   const [father, setFather] = useState({
     family_name: "",
     first_name: "",
     middle_name: "",
+    contact_number: "",
   });
   const [fatherDeceased, setFatherDeceased] = useState(false);
 
@@ -138,6 +151,7 @@ export function EnrollmentForm({ profile }) {
     family_name: "",
     first_name: "",
     middle_name: "",
+    contact_number: "",
   });
   const [motherDeceased, setMotherDeceased] = useState(false);
 
@@ -148,6 +162,7 @@ export function EnrollmentForm({ profile }) {
     first_name: "",
     middle_name: "",
     relationship: "",
+    contact_number: "",
   });
 
   const [selectedBarangay, setSelectedBarangay] = useState("");
@@ -181,6 +196,11 @@ export function EnrollmentForm({ profile }) {
     title: "Learner Registration Successful!",
     message: "The learner has been registered successfully.",
   });
+  useEffect(() => {
+    if (!showSuccessModal) return undefined;
+    const timer = window.setTimeout(() => setShowSuccessModal(false), 4500);
+    return () => window.clearTimeout(timer);
+  }, [showSuccessModal]);
   const assignedGrade = adviserGradeKey(profile?.grade_level_assigned);
   const hasAssignedGrade = ["0", "1", "2", "3", "4", "5", "6"].includes(
     assignedGrade,
@@ -292,43 +312,133 @@ export function EnrollmentForm({ profile }) {
 
   useEffect(() => {
     const lrn = formData.lrn.trim();
-    if (lrn.length !== 12) {
+    if (lrn.length !== 13) {
       setExistingLearnerId(null);
       setLrnLookupMessage("");
+      setLrnDuplicateCount(0);
+      setAdvisoryGuardianHint(null);
       return undefined;
     }
 
     let cancelled = false;
     const lookupLearner = async () => {
       setLrnLookupMessage("Looking up learner...");
-      const { data, error } = await supabase
+      // Fetch every row for this LRN (not just one): the same LRN can end up on
+      // more than one students row, and silently taking a single "latest updated"
+      // row was masking correct data (e.g. father's name, middle name) that only
+      // existed on an older duplicate.
+      const { data: rows, error } = await supabase
         .from("students")
         .select("*")
         .eq("lrn", lrn)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order("updated_at", { ascending: false });
       if (cancelled) return;
       if (error) {
         setLrnLookupMessage(`Could not look up LRN: ${error.message}`);
+        setLrnDuplicateCount(0);
         return;
       }
-      if (!data) {
+      if (!rows || rows.length === 0) {
         setExistingLearnerId(null);
         setLrnLookupMessage("New learner LRN. Enter the enrollment details.");
+        setLrnDuplicateCount(0);
+        setAdvisoryGuardianHint(null);
         return;
       }
 
-      const fatherData = parseStoredName(data.father_name);
-      const motherData = parseStoredName(data.mother_name);
+      // Merge every field across all matching rows: take the first non-empty
+      // value, scanning from most- to least-recently updated. This way a value
+      // that only survives on one duplicate (e.g. father_name) still shows up.
+      const pick = (field) => {
+        for (const row of rows) {
+          const value = row[field];
+          if (value !== null && value !== undefined && String(value).trim() !== "") {
+            return value;
+          }
+        }
+        return "";
+      };
+      const data = {
+        id: rows[0].id,
+        family_name: pick("family_name"),
+        first_name: pick("first_name"),
+        middle_name: pick("middle_name"),
+        birthdate: pick("birthdate"),
+        age: pick("age"),
+        gender: pick("gender"),
+        sex: pick("sex"),
+        tribe: pick("tribe"),
+        religion: pick("religion"),
+        is_4ps: rows.some((row) => Boolean(row.is_4ps)),
+        reading_category: pick("reading_category"),
+        contact_number: pick("contact_number"),
+        father_contact_number: pick("father_contact_number"),
+        mother_contact_number: pick("mother_contact_number"),
+        guardian_contact_number: pick("guardian_contact_number"),
+        photo_url: pick("photo_url"),
+        father_name: pick("father_name"),
+        mother_name: pick("mother_name"),
+        guardian_type: pick("guardian_type"),
+        guardian_contact_name: pick("guardian_contact_name"),
+        address: pick("address"),
+      };
+
+      // Older Advisory saves kept a Father/Mother only in the guardian columns.
+      // Treat that value as the parent-name fallback so Enrollment immediately
+      // displays it; submitting the form persists it into father_name/mother_name.
+      const guardianType = String(data.guardian_type || "").trim().toLowerCase();
+      const advisoryFather =
+        guardianType === "father" ? data.guardian_contact_name : "";
+      const advisoryMother =
+        guardianType === "mother" ? data.guardian_contact_name : "";
+      const effectiveFatherName = data.father_name || advisoryFather;
+      const effectiveMotherName = data.mother_name || advisoryMother;
+      const fatherData = parseStoredName(effectiveFatherName);
+      const motherData = parseStoredName(effectiveMotherName);
+      fatherData.contact_number = data.father_contact_number ||
+        (guardianType === "father" ? data.contact_number : "");
+      motherData.contact_number = data.mother_contact_number ||
+        (guardianType === "mother" ? data.contact_number : "");
       const address = String(data.address || "");
       const barangayMatch = address.match(/Brgy\.\s*([^,]+)/i);
       const street = address.split(/,?\s*Brgy\./i)[0].trim();
       setExistingLearnerId(data.id);
-      setFatherDeceased(String(data.father_name).toUpperCase() === "DECEASED");
-      setMotherDeceased(String(data.mother_name).toUpperCase() === "DECEASED");
+      setFatherDeceased(String(effectiveFatherName).toUpperCase() === "DECEASED");
+      setMotherDeceased(String(effectiveMotherName).toUpperCase() === "DECEASED");
       setFather(fatherData);
       setMother(motherData);
+      if (data.guardian_name) {
+        const guardianName = String(data.guardian_name).replace(/\s*\([^()]*\)\s*$/, "");
+        setGuardian({
+          ...parseStoredName(guardianName),
+          relationship:
+            String(data.guardian_name).match(/\(([^()]*)\)\s*$/)?.[1] || "",
+          contact_number: data.guardian_contact_number ||
+            (!["father", "mother"].includes(guardianType) ? data.contact_number : ""),
+        });
+        setHasGuardian(true);
+      } else {
+        setGuardian({
+          family_name: "",
+          first_name: "",
+          middle_name: "",
+          relationship: "",
+          contact_number: "",
+        });
+        setHasGuardian(false);
+      }
+      // Advisory Class stores its parent/guardian contact in separate
+      // guardian_type / guardian_contact_name columns, not father_name /
+      // mother_name. If those were never filled in here, surface what was
+      // recorded in Advisory Class as a hint instead of leaving it hidden.
+      setAdvisoryGuardianHint(
+        !data.father_name &&
+          !data.mother_name &&
+          data.guardian_contact_name &&
+          !["father", "mother"].includes(guardianType)
+          ? { type: data.guardian_type || "Guardian", name: data.guardian_contact_name }
+          : null,
+      );
       setSelectedBarangay(barangayMatch?.[1]?.trim() || "");
       setStreetAddress(street);
       setCapturedPhoto(data.photo_url || null);
@@ -341,9 +451,7 @@ export function EnrollmentForm({ profile }) {
         age: data.age ?? "",
         gender: ["F", "FEMALE", "GIRL"].includes(
           String(data.gender || data.sex || "").toUpperCase(),
-        )
-          ? "Female"
-          : "Male",
+        ) ? "Female" : "Male",
         tribe: data.tribe || "",
         religion: data.religion || "",
         is_4ps_beneficiary: Boolean(data.is_4ps),
@@ -351,14 +459,15 @@ export function EnrollmentForm({ profile }) {
         contact_number: data.contact_number || "",
         photo_url: data.photo_url || "",
       }));
+      setLrnDuplicateCount(rows.length);
       setLrnLookupMessage(
-        "Existing learner found. Details were prefilled and remain editable.",
+        rows.length > 1
+          ? `Warning: ${rows.length} records share this LRN. Fields below were merged from all of them, but please double-check every value — ask an admin to remove the duplicate record(s) in Supabase so this doesn't keep happening.`
+          : "Existing learner found. Details were prefilled and remain editable.",
       );
     };
     lookupLearner();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [formData.lrn]);
 
   const handleBirthdateChange = (e) => {
@@ -402,9 +511,7 @@ export function EnrollmentForm({ profile }) {
 
         const matchingAdvisers = data
           .filter((teacher) => {
-            const teachingType = String(
-              teacher.teaching_type || "",
-            ).toUpperCase();
+            const teachingType = String(teacher.teaching_type || "").toUpperCase();
             const gradeLevel = String(teacher.grade_level || "").toUpperCase();
             return (
               (teachingType === "ADVISER" || teacher.is_grade_chairman) &&
@@ -476,6 +583,18 @@ export function EnrollmentForm({ profile }) {
       ? `${streetAddress ? streetAddress + ", " : ""}Brgy. ${selectedBarangay}, Isabela City, Basilan`
       : "";
 
+    // Advisory Class reads its guardian contact from guardian_type /
+    // guardian_contact_name, a separate pair of columns from father_name /
+    // mother_name. Keep them in sync here (father wins, then mother) so a
+    // parent entered on this form also shows up as the Advisory guardian
+    // contact instead of silently staying invisible over there.
+    const guardianFromParent =
+      constructedFather && constructedFather !== "DECEASED"
+        ? { guardian_type: "Father", guardian_contact_name: null }
+        : constructedMother && constructedMother !== "DECEASED"
+          ? { guardian_type: "Mother", guardian_contact_name: null }
+          : null;
+
     const { gender, is_4ps_beneficiary, ...editableData } = formData;
     const payload = {
       ...editableData,
@@ -486,26 +605,53 @@ export function EnrollmentForm({ profile }) {
       school_year: getCurrentSchoolYear(),
       father_name: constructedFather,
       mother_name: constructedMother,
+      father_contact_number: father.contact_number?.trim() || null,
+      mother_contact_number: mother.contact_number?.trim() || null,
+      guardian_contact_number: hasGuardian
+        ? guardian.contact_number?.trim() || null
+        : null,
       guardian_name: constructedGuardian,
+      // Retained for Auto ID/BMI compatibility while those apps still expect
+      // one contact field. Prefer the chosen legal guardian, then either parent.
+      contact_number:
+        (hasGuardian ? guardian.contact_number?.trim() : "") ||
+        father.contact_number?.trim() ||
+        mother.contact_number?.trim() ||
+        null,
       address: fullAddress,
+      ...(guardianFromParent || {}),
     };
 
-    const { error } = existingLearnerId
-      ? await supabase
-          .from("students")
-          .update(payload)
-          .eq("id", existingLearnerId)
-      : await supabase.from("students").insert([payload]);
+    // Finding an existing LRN means this is a details edit, not reenrollment or
+    // a class transfer. Keep its current school year, grade, and adviser intact.
+    const {
+      grade_level: _gradeLevel,
+      adviser_id: _adviserId,
+      school_id: _schoolId,
+      school_name: _schoolName,
+      school_year: _schoolYear,
+      ...existingLearnerChanges
+    } = payload;
+
+    const saveResult = existingLearnerId
+      ? await supabase.rpc("save_existing_student_details", {
+          p_student_id: String(existingLearnerId),
+          p_details: existingLearnerChanges,
+        })
+      : await supabase.from("students").insert([payload]).select().single();
+    const { data: savedLearner, error } = saveResult;
 
     if (error) {
-      setErrorMessage(`Failed to enroll learner: ${error.message}`);
+      setErrorMessage(
+        `${existingLearnerId ? "Failed to update learner" : "Failed to enroll learner"}: ${error.message}`,
+      );
     } else {
       setSuccessNotice(
         existingLearnerId
           ? {
-              title: "Learner Enrollment Updated!",
+              title: "Learner Details Updated!",
               message:
-                "The learner's existing record has been updated for the selected grade and advisory class.",
+                "The edited learner data was saved. The existing grade and advisory assignment were not changed.",
             }
           : {
               title: "Learner Registration Successful!",
@@ -514,13 +660,20 @@ export function EnrollmentForm({ profile }) {
             },
       );
       setShowSuccessModal(true);
+      if (savedLearner?.id) {
+        window.dispatchEvent(
+          new CustomEvent("ieces:students-updated", {
+            detail: { updates: [savedLearner] },
+          }),
+        );
+      }
       stopCamera();
       setCapturedPhoto(null);
 
       // Reset all inputs & dropdowns to default empty states
-      setFather({ family_name: "", first_name: "", middle_name: "" });
+      setFather({ family_name: "", first_name: "", middle_name: "", contact_number: "" });
       setFatherDeceased(false);
-      setMother({ family_name: "", first_name: "", middle_name: "" });
+      setMother({ family_name: "", first_name: "", middle_name: "", contact_number: "" });
       setMotherDeceased(false);
       setHasGuardian(false);
       setGuardian({
@@ -528,6 +681,7 @@ export function EnrollmentForm({ profile }) {
         first_name: "",
         middle_name: "",
         relationship: "",
+        contact_number: "",
       });
       setSelectedBarangay("");
       setStreetAddress("");
@@ -571,14 +725,16 @@ export function EnrollmentForm({ profile }) {
         </div>
       )}
 
-      {/* CENTERED SUCCESS NOTIFICATION MODAL */}
+      {/* Compact save confirmation card */}
       {showSuccessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl p-6 md:p-8 max-w-sm w-full text-center shadow-2xl border border-slate-100 transform transition-all scale-100">
-            {/* Green Check Icon */}
-            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed right-4 top-4 z-50 flex w-[min(22rem,calc(100vw-2rem))] items-start gap-3 rounded-xl border border-emerald-200 bg-white p-4 shadow-xl animate-fadeIn"
+        >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
               <svg
-                className="w-8 h-8"
+                className="h-5 w-5"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -591,21 +747,18 @@ export function EnrollmentForm({ profile }) {
                 />
               </svg>
             </div>
-
-            <h3 className="text-xl font-bold text-slate-800 mb-2">
-              {successNotice.title}
-            </h3>
-            <p className="text-slate-600 text-sm mb-6">
-              {successNotice.message}
-            </p>
-
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-bold text-slate-800">{successNotice.title}</h3>
+              <p className="mt-1 text-xs leading-5 text-slate-600">{successNotice.message}</p>
+            </div>
             <button
+              type="button"
               onClick={() => setShowSuccessModal(false)}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-xl shadow transition-colors text-sm"
+              aria-label="Dismiss notification"
+              className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
             >
-              Close
+              ×
             </button>
-          </div>
         </div>
       )}
 
@@ -624,11 +777,7 @@ export function EnrollmentForm({ profile }) {
                 {locksAssignedGrade ? (
                   <input
                     type="text"
-                    value={
-                      assignedGrade === "0"
-                        ? "Kindergarten"
-                        : `Grade ${assignedGrade}`
-                    }
+                    value={assignedGrade === "0" ? "Kindergarten" : `Grade ${assignedGrade}`}
                     readOnly
                     className="w-full p-2.5 border rounded-lg bg-slate-100 text-sm font-bold text-slate-700 cursor-not-allowed"
                   />
@@ -644,9 +793,7 @@ export function EnrollmentForm({ profile }) {
                     <option value="">-- Select Grade Level --</option>
                     <option value="0">Kindergarten</option>
                     {[1, 2, 3, 4, 5, 6].map((g) => (
-                      <option key={g} value={g}>
-                        Grade {g}
-                      </option>
+                      <option key={g} value={g}>Grade {g}</option>
                     ))}
                   </select>
                 )}
@@ -681,13 +828,13 @@ export function EnrollmentForm({ profile }) {
 
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
-                  LRN (12 Digits Only)
+                  LRN (13 Digits Only)
                 </label>
                 <input
                   type="text"
                   inputMode="numeric"
-                  maxLength="12"
-                  pattern="\d{12}"
+                  maxLength="13"
+                  pattern="\d{13}"
                   placeholder="123456789012"
                   value={formData.lrn}
                   onChange={(e) => {
@@ -701,7 +848,13 @@ export function EnrollmentForm({ profile }) {
                 />
                 {lrnLookupMessage && (
                   <p
-                    className={`mt-1 text-xs ${existingLearnerId ? "text-emerald-600" : "text-slate-500"}`}
+                    className={`mt-1 text-xs ${
+                      lrnDuplicateCount > 1
+                        ? "font-semibold text-amber-600"
+                        : existingLearnerId
+                          ? "text-emerald-600"
+                          : "text-slate-500"
+                    }`}
                   >
                     {lrnLookupMessage}
                   </p>
@@ -876,16 +1029,11 @@ export function EnrollmentForm({ profile }) {
                 <select
                   value={formData.reading_category}
                   onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      reading_category: e.target.value,
-                    })
+                    setFormData({ ...formData, reading_category: e.target.value })
                   }
                   className="w-full p-2.5 border rounded-lg text-sm bg-white"
                 >
-                  <option value="">
-                    -- Select Reading Category (optional) --
-                  </option>
+                  <option value="">-- Select Reading Category (optional) --</option>
                   {PHILIRI_READING_CATEGORIES.map((c) => (
                     <option key={c.value} value={c.value}>
                       {c.label}
@@ -895,8 +1043,7 @@ export function EnrollmentForm({ profile }) {
               </div>
               <div className="flex items-end pb-0.5">
                 <p className="text-xs text-slate-400 leading-snug">
-                  Based on Phil-IRI pre/post assessment. Leave blank if not yet
-                  assessed.
+                  Based on Phil-IRI pre/post assessment. Leave blank if not yet assessed.
                 </p>
               </div>
             </div>
@@ -929,7 +1076,13 @@ export function EnrollmentForm({ profile }) {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {advisoryGuardianHint?.type === "Father" && (
+                <p className="mb-2 text-xs text-amber-600">
+                  Advisory Class has "{advisoryGuardianHint.name}" recorded as this learner's guardian contact, but no official father's name is on file here yet. Advisory Class saves that contact separately, so please type the father's name into the fields below to record it for enrollment.
+                </p>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <input
                   type="text"
                   placeholder={
@@ -975,6 +1128,16 @@ export function EnrollmentForm({ profile }) {
                   }
                   className="w-full p-2.5 border rounded-lg text-sm uppercase disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
+                <input
+                  type="tel"
+                  placeholder="Father's Contact Number"
+                  value={fatherDeceased ? "" : father.contact_number || ""}
+                  disabled={fatherDeceased}
+                  onChange={(e) =>
+                    setFather({ ...father, contact_number: e.target.value })
+                  }
+                  className="w-full p-2.5 border rounded-lg text-sm disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                />
               </div>
             </div>
 
@@ -1006,7 +1169,13 @@ export function EnrollmentForm({ profile }) {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {advisoryGuardianHint?.type === "Mother" && (
+                <p className="mb-2 text-xs text-amber-600">
+                  Advisory Class has "{advisoryGuardianHint.name}" recorded as this learner's guardian contact, but no official mother's name is on file here yet. Advisory Class saves that contact separately, so please type the mother's name into the fields below to record it for enrollment.
+                </p>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <input
                   type="text"
                   placeholder={
@@ -1052,6 +1221,16 @@ export function EnrollmentForm({ profile }) {
                   }
                   className="w-full p-2.5 border rounded-lg text-sm uppercase disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
+                <input
+                  type="tel"
+                  placeholder="Mother's Contact Number"
+                  value={motherDeceased ? "" : mother.contact_number || ""}
+                  disabled={motherDeceased}
+                  onChange={(e) =>
+                    setMother({ ...mother, contact_number: e.target.value })
+                  }
+                  className="w-full p-2.5 border rounded-lg text-sm disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                />
               </div>
             </div>
 
@@ -1073,6 +1252,21 @@ export function EnrollmentForm({ profile }) {
                 />
                 Guardian (Other than Parents / Orphan)
               </label>
+
+              {!hasGuardian && (
+                <div className="mb-3">
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
+                    Guardian Contact Number
+                  </label>
+                  <input
+                    type="tel"
+                    value=""
+                    disabled
+                    placeholder="Select Guardian first"
+                    className="w-full p-2.5 border rounded-lg text-sm bg-slate-100 text-slate-400 cursor-not-allowed"
+                  />
+                </div>
+              )}
 
               {hasGuardian && (
                 <div className="p-4 bg-slate-50 border rounded-lg space-y-4">
@@ -1155,27 +1349,26 @@ export function EnrollmentForm({ profile }) {
                       </option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
+                      Guardian Contact Number
+                    </label>
+                    <input
+                      type="tel"
+                      value={guardian.contact_number || ""}
+                      onChange={(e) =>
+                        setGuardian({ ...guardian, contact_number: e.target.value })
+                      }
+                      className="w-full p-2.5 border rounded-lg text-sm bg-white"
+                      required={hasGuardian}
+                    />
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Contact & Address Section */}
+            {/* Address Section */}
             <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
-                  Contact Number
-                </label>
-                <input
-                  type="text"
-                  value={formData.contact_number}
-                  onChange={(e) =>
-                    setFormData({ ...formData, contact_number: e.target.value })
-                  }
-                  className="w-full p-2.5 border rounded-lg text-sm"
-                  required
-                />
-              </div>
-
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
                   Barangay (Isabela City)

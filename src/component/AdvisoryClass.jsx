@@ -45,7 +45,19 @@ const GUARDIAN_TYPES = [
   "Other Legal Guardian",
 ];
 
+// Father takes priority, then mother, then whatever guardian contact was
+// explicitly recorded here — matching the same order used on the printed ID
+// (see resolveGuardianDisplay in AutoId.jsx) so both screens agree.
 const learnerGuardianDraft = (student) => {
+  const father = String(student.father_name || "").trim();
+  if (father && father.toUpperCase() !== "DECEASED") {
+    return { guardian_type: "Father", guardian_contact_name: father.toUpperCase() };
+  }
+  const mother = String(student.mother_name || "").trim();
+  if (mother && mother.toUpperCase() !== "DECEASED") {
+    return { guardian_type: "Mother", guardian_contact_name: mother.toUpperCase() };
+  }
+
   if (student.guardian_type || student.guardian_contact_name) {
     const storedType = String(student.guardian_type || "").trim();
     return {
@@ -68,18 +80,6 @@ const learnerGuardianDraft = (student) => {
       guardian_contact_name: storedGuardian
         .replace(/\s*\([^()]*\)\s*$/, "")
         .toUpperCase(),
-    };
-  }
-  if (student.father_name) {
-    return {
-      guardian_type: "Father",
-      guardian_contact_name: String(student.father_name).toUpperCase(),
-    };
-  }
-  if (student.mother_name) {
-    return {
-      guardian_type: "Mother",
-      guardian_contact_name: String(student.mother_name).toUpperCase(),
     };
   }
   return { guardian_type: "", guardian_contact_name: "" };
@@ -195,7 +195,7 @@ export function AdvisoryClass({ profile }) {
               birthdate: student.birthdate
                 ? String(student.birthdate).slice(0, 10)
                 : "",
-              middle_initial: learnerMiddleInitial(student),
+              middle_name: student.middle_name || "",
               religion: student.religion || "",
               tribe: student.tribe || "",
               barangay: barangay === "—" ? "" : barangay,
@@ -236,16 +236,6 @@ export function AdvisoryClass({ profile }) {
       setMessage("LRN must contain exactly 13 digits, or be left blank.");
       return;
     }
-    const invalidMiddleInitial = dirtyStudentIds.find((studentId) => {
-      const middleInitial = String(
-        demographicDrafts[studentId]?.middle_initial || "",
-      ).trim();
-      return middleInitial && !/^[A-Z]$/i.test(middleInitial);
-    });
-    if (invalidMiddleInitial) {
-      setMessage("Middle initial must contain one letter, or be left blank.");
-      return;
-    }
     const incompleteGuardian = dirtyStudentIds.find((studentId) => {
       const draft = demographicDrafts[studentId] || {};
       return Boolean(draft.guardian_type) !==
@@ -267,7 +257,7 @@ export function AdvisoryClass({ profile }) {
           id: studentId,
           lrn: draft?.lrn?.trim() || null,
           birthdate: draft?.birthdate || null,
-          middle_initial: draft?.middle_initial || null,
+          middle_name: draft?.middle_name?.trim() || null,
           religion: draft?.religion || null,
           tribe: draft?.tribe || null,
           address: addressWithBarangay(student?.address, draft?.barangay, draft?.street_address),
@@ -303,14 +293,14 @@ export function AdvisoryClass({ profile }) {
       })
       .map(({ id, birthdate }) => ({ id, birthdate }));
 
-    const middleInitialUpdates = updates
-      .filter(({ id, middle_initial }) => {
+    const middleNameUpdates = updates
+      .filter(({ id, middle_name }) => {
         const student = students.find(
           (candidate) => String(candidate.id) === String(id),
         );
-        return (middle_initial || "") !== learnerMiddleInitial(student);
+        return (middle_name || "") !== String(student?.middle_name || "").trim();
       })
-      .map(({ id, middle_initial }) => ({ id, middle_initial }));
+      .map(({ id, middle_name }) => ({ id, middle_name }));
 
     if (lrnUpdates.length) {
       const { error: lrnError } = await supabase.rpc("save_advisory_lrns", {
@@ -335,13 +325,13 @@ export function AdvisoryClass({ profile }) {
       }
     }
 
-    if (middleInitialUpdates.length) {
-      const { error: middleInitialError } = await supabase.rpc(
-        "save_advisory_middle_initials",
-        { p_updates: middleInitialUpdates },
+    if (middleNameUpdates.length) {
+      const { error: middleNameError } = await supabase.rpc(
+        "save_advisory_middle_names",
+        { p_updates: middleNameUpdates },
       );
-      if (middleInitialError) {
-        setMessage(`Failed to save middle initial: ${middleInitialError.message}`);
+      if (middleNameError) {
+        setMessage(`Failed to save middle name: ${middleNameError.message}`);
         setSavingDemographics(false);
         return;
       }
@@ -384,10 +374,7 @@ export function AdvisoryClass({ profile }) {
       window.dispatchEvent(
         new CustomEvent("ieces:students-updated", {
           detail: {
-            updates: updates.map(({ middle_initial, ...update }) => ({
-              ...update,
-              middle_name: middle_initial,
-            })),
+            updates,
           },
         }),
       );
@@ -554,7 +541,7 @@ export function AdvisoryClass({ profile }) {
                   Learner Name
                 </th>
                 <th rowSpan="2" className="sticky-roster-photo">Photo</th>
-                <th rowSpan="2">Middle Initial</th>
+                <th rowSpan="2">Middle Name</th>
                 <th rowSpan="2">LRN</th>
                 <th rowSpan="2">Grade Level</th>
                 <th rowSpan="2">Gender</th>
@@ -592,7 +579,7 @@ export function AdvisoryClass({ profile }) {
                   const draft = demographicDrafts[String(st.id)] || {};
                   const displayName = learnerDisplayName({
                     ...st,
-                    middle_name: draft.middle_initial ?? st.middle_name,
+                    middle_name: draft.middle_name ?? st.middle_name,
                   });
                   return (
                     <tr key={st.id}>
@@ -615,26 +602,24 @@ export function AdvisoryClass({ profile }) {
                           </div>
                         )}
                       </td>
-                      <td className="min-w-[105px]">
+                      <td className="min-w-[160px]">
                         <input
                           type="text"
                           inputMode="text"
-                          maxLength={1}
-                          value={draft.middle_initial || ""}
+                          maxLength={100}
+                          value={draft.middle_name || ""}
                           onChange={(event) =>
                             updateDemographicDraft(
                               st.id,
-                              "middle_initial",
+                              "middle_name",
                               event.target.value
-                                .replace(/[^a-z]/gi, "")
-                                .slice(0, 1)
                                 .toUpperCase(),
                             )
                           }
                           disabled={savingDemographics}
-                          placeholder="M.I."
-                          aria-label={`Middle initial for ${displayName}`}
-                          className="advisory-contact-input min-w-[70px] text-center uppercase"
+                          placeholder="Middle name"
+                          aria-label={`Middle name for ${displayName}`}
+                          className="advisory-contact-input min-w-[140px] uppercase"
                         />
                       </td>
                       <td>
