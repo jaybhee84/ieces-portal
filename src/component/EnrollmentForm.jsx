@@ -12,44 +12,44 @@ const ISABELA_CITY_BARANGAYS = [
   "Binuangan",
   "Busay",
   "Cabunbata",
-  "Cawa-Cawa",
-  "Communal",
-  "Isabela East Port (Poblacion)",
-  "Isabela West Port (Poblacion)",
+  "Calvario",
+  "Carbon",
+  "Diki",
+  "Doña Ramona T. Alano",
+  "Eastside",
+  "Isabela Proper",
   "Kapatagan Grande",
+  "Kapayawan",
   "Kaumpurnah Zone I",
   "Kaumpurnah Zone II",
   "Kaumpurnah Zone III",
-  "Kapayawan",
-  "Laisan",
-  "Limpapa",
-  "Lugbung",
+  "Kumalarang",
+  "La Piedad",
+  "Lampinigan",
+  "Lanote",
   "Lukbuton",
   "Lumbang",
   "Makiri",
-  "Malim",
+  "Maligue",
   "Marang-Marang",
-  "Matarling",
-  "Matatag",
+  "Marketsite",
+  "Masula",
   "Menzi",
-  "Malamawi",
+  "Panigayan",
   "Panunsulan",
   "Port Area",
   "Riverside",
   "San Rafael",
-  "Santa Clara",
+  "Santa Barbara",
   "Santa Cruz",
   "Seaside",
   "Small Kapatagan",
   "Sumagdang",
-  "Sungkayut",
+  "Sunrise Village",
+  "Tabiawan",
   "Tabuk",
   "Tampalan",
-  "Tebiah",
-  "Tunghatang",
-  "Unsang",
-  "Upper Hingabu",
-  "Upper Port Area",
+  "Timpul",
 ];
 
 // Indigenous Peoples / Ethnic Groups in Western Mindanao
@@ -88,10 +88,14 @@ const IECES_SCHOOL_NAME = "Isabela East Central Elementary School";
 
 const cameraPreferenceScore = (device) => {
   const label = String(device?.label || "").toLowerCase();
-  if (/nc beauty|virtual|obs|snap camera|manycam|xsplit|ndi camera/.test(label)) {
+  if (
+    /nc beauty|virtual|obs|snap camera|manycam|xsplit|ndi camera/.test(label)
+  ) {
     return -100;
   }
-  if (/usb|webcam|logitech|brio|c920|c922|external|hd pro|lifecam/.test(label)) {
+  if (
+    /usb|webcam|logitech|brio|c920|c922|external|hd pro|lifecam/.test(label)
+  ) {
     return 100;
   }
   if (/integrated|built-in|facetime|front camera/.test(label)) return 10;
@@ -99,7 +103,9 @@ const cameraPreferenceScore = (device) => {
 };
 
 const parseStoredName = (value) => {
-  const parts = String(value || "").split(",").map((part) => part.trim());
+  const parts = String(value || "")
+    .split(",")
+    .map((part) => part.trim());
   return {
     family_name: parts[0] || "",
     first_name: parts[1] || "",
@@ -335,7 +341,9 @@ export function EnrollmentForm({ profile }) {
         age: data.age ?? "",
         gender: ["F", "FEMALE", "GIRL"].includes(
           String(data.gender || data.sex || "").toUpperCase(),
-        ) ? "Female" : "Male",
+        )
+          ? "Female"
+          : "Male",
         tribe: data.tribe || "",
         religion: data.religion || "",
         is_4ps_beneficiary: Boolean(data.is_4ps),
@@ -343,10 +351,14 @@ export function EnrollmentForm({ profile }) {
         contact_number: data.contact_number || "",
         photo_url: data.photo_url || "",
       }));
-      setLrnLookupMessage("Existing learner found. Details were prefilled and remain editable.");
+      setLrnLookupMessage(
+        "Existing learner found. Details were prefilled and remain editable.",
+      );
     };
     lookupLearner();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [formData.lrn]);
 
   const handleBirthdateChange = (e) => {
@@ -390,7 +402,9 @@ export function EnrollmentForm({ profile }) {
 
         const matchingAdvisers = data
           .filter((teacher) => {
-            const teachingType = String(teacher.teaching_type || "").toUpperCase();
+            const teachingType = String(
+              teacher.teaching_type || "",
+            ).toUpperCase();
             const gradeLevel = String(teacher.grade_level || "").toUpperCase();
             return (
               (teachingType === "ADVISER" || teacher.is_grade_chairman) &&
@@ -459,7 +473,7 @@ export function EnrollmentForm({ profile }) {
       : "";
 
     const fullAddress = selectedBarangay
-      ? `${streetAddress ? streetAddress + ", " : ""}Brgy. ${selectedBarangay}, Isabela City`
+      ? `${streetAddress ? streetAddress + ", " : ""}Brgy. ${selectedBarangay}, Isabela City, Basilan`
       : "";
 
     const { gender, is_4ps_beneficiary, ...editableData } = formData;
@@ -477,7 +491,10 @@ export function EnrollmentForm({ profile }) {
     };
 
     const { error } = existingLearnerId
-      ? await supabase.from("students").update(payload).eq("id", existingLearnerId)
+      ? await supabase
+          .from("students")
+          .update(payload)
+          .eq("id", existingLearnerId)
       : await supabase.from("students").insert([payload]);
 
     if (error) {
@@ -607,7 +624,11 @@ export function EnrollmentForm({ profile }) {
                 {locksAssignedGrade ? (
                   <input
                     type="text"
-                    value={assignedGrade === "0" ? "Kindergarten" : `Grade ${assignedGrade}`}
+                    value={
+                      assignedGrade === "0"
+                        ? "Kindergarten"
+                        : `Grade ${assignedGrade}`
+                    }
                     readOnly
                     className="w-full p-2.5 border rounded-lg bg-slate-100 text-sm font-bold text-slate-700 cursor-not-allowed"
                   />
@@ -623,7 +644,9 @@ export function EnrollmentForm({ profile }) {
                     <option value="">-- Select Grade Level --</option>
                     <option value="0">Kindergarten</option>
                     {[1, 2, 3, 4, 5, 6].map((g) => (
-                      <option key={g} value={g}>Grade {g}</option>
+                      <option key={g} value={g}>
+                        Grade {g}
+                      </option>
                     ))}
                   </select>
                 )}
@@ -677,7 +700,9 @@ export function EnrollmentForm({ profile }) {
                   required
                 />
                 {lrnLookupMessage && (
-                  <p className={`mt-1 text-xs ${existingLearnerId ? "text-emerald-600" : "text-slate-500"}`}>
+                  <p
+                    className={`mt-1 text-xs ${existingLearnerId ? "text-emerald-600" : "text-slate-500"}`}
+                  >
                     {lrnLookupMessage}
                   </p>
                 )}
@@ -851,11 +876,16 @@ export function EnrollmentForm({ profile }) {
                 <select
                   value={formData.reading_category}
                   onChange={(e) =>
-                    setFormData({ ...formData, reading_category: e.target.value })
+                    setFormData({
+                      ...formData,
+                      reading_category: e.target.value,
+                    })
                   }
                   className="w-full p-2.5 border rounded-lg text-sm bg-white"
                 >
-                  <option value="">-- Select Reading Category (optional) --</option>
+                  <option value="">
+                    -- Select Reading Category (optional) --
+                  </option>
                   {PHILIRI_READING_CATEGORIES.map((c) => (
                     <option key={c.value} value={c.value}>
                       {c.label}
@@ -865,7 +895,8 @@ export function EnrollmentForm({ profile }) {
               </div>
               <div className="flex items-end pb-0.5">
                 <p className="text-xs text-slate-400 leading-snug">
-                  Based on Phil-IRI pre/post assessment. Leave blank if not yet assessed.
+                  Based on Phil-IRI pre/post assessment. Leave blank if not yet
+                  assessed.
                 </p>
               </div>
             </div>

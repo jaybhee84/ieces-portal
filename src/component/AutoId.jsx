@@ -10,10 +10,7 @@ import {
   orgAdviserName,
 } from "../lib/orgAdvisers";
 import { loadAdvisoryRoster } from "../lib/advisoryRosterData";
-import {
-  learnerDisplayName,
-  learnerMiddleInitial,
-} from "../lib/learnerRoster";
+import { learnerDisplayName, learnerMiddleInitial } from "../lib/learnerRoster";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const LS_KEY_NAME = "autoid_principal_name";
@@ -80,9 +77,13 @@ function formatGradeSection(rawGrade, rawSection) {
   const isKinder = gradeKey === "0";
   let secStr = String(rawSection || "UNASSIGNED").trim();
   secStr =
-    secStr.replace(/^(GRADE\s*(?:[1-6]|VI|IV|V|III|II|I)|KINDER)\s*[-–—]\s*/i, "").trim() || secStr;
+    secStr
+      .replace(/^(GRADE\s*(?:[1-6]|VI|IV|V|III|II|I)|KINDER)\s*[-–—]\s*/i, "")
+      .trim() || secStr;
   if (isKinder) {
-    const sessionMatch = secStr.match(/\s*[-–—]\s*(MORNING|AFTERNOON)(?:\s+SESSION)?$/i);
+    const sessionMatch = secStr.match(
+      /\s*[-–—]\s*(MORNING|AFTERNOON)(?:\s+SESSION)?$/i,
+    );
     const session = sessionMatch
       ? `${sessionMatch[1].charAt(0).toUpperCase()}${sessionMatch[1].slice(1).toLowerCase()} Session`
       : "";
@@ -113,7 +114,7 @@ function gradeSectionFontSize(rawGrade, rawSection) {
   const sectionLength = String(rawSection || "UNASSIGNED").trim().length;
   if (sectionLength > 24) return 9.5;
   if (sectionLength > 17) return 10.5;
-  return 11.5;
+  return 13;
 }
 const CARD_WIDTH = 350;
 // Each half of id-template.png is 768 × 1024 (3:4). Preserve that ratio.
@@ -163,12 +164,12 @@ function IdCards({ front, back, card }) {
         </div>
         {/* LRN */}
         <div
-          style={ov(183, 190, 140, undefined, {
-            fontSize: "10px",
+          style={ov(178, 190, 140, undefined, {
+            fontSize: "13px",
             fontWeight: "800",
             color: "#111",
             fontFamily: "monospace",
-            letterSpacing: "0.3px",
+            letterSpacing: "0.5px",
             lineHeight: "1",
           })}
         >
@@ -193,7 +194,7 @@ function IdCards({ front, back, card }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: "9.5px",
+            fontSize: `${front.gradeSectionFontSize}px`,
             fontWeight: "900",
             color: "#7b0000",
             textAlign: "center",
@@ -215,7 +216,7 @@ function IdCards({ front, back, card }) {
             fontWeight: "900",
             color: "#000",
             textAlign: "center",
-            letterSpacing: "0.3px",
+            letterSpacing: "0.5px",
             lineHeight: "1.1",
             padding: "0 8px",
             overflow: "hidden",
@@ -259,10 +260,10 @@ function IdCards({ front, back, card }) {
         {/* Address */}
         <div
           style={ov(170, 23, 301, undefined, {
-            fontSize: "9.5px",
-            fontWeight: "700",
+            fontSize: "12px",
+            fontWeight: "800",
             color: "#111",
-            lineHeight: "1.4",
+            lineHeight: "1.5",
           })}
         >
           {back.address}
@@ -292,7 +293,7 @@ function IdCards({ front, back, card }) {
         {/* Contact */}
         <div
           style={ov(341, 122, 210, undefined, {
-            fontSize: "9px",
+            fontSize: "12px",
             fontWeight: "800",
             color: "#111",
             fontFamily: "monospace",
@@ -303,7 +304,7 @@ function IdCards({ front, back, card }) {
         </div>
         {/* QR Code */}
         <div
-          style={ov(392, 235, 75, 76, {
+          style={ov(385, 228, 90, 90, {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -313,8 +314,8 @@ function IdCards({ front, back, card }) {
         >
           <QRCodeSVG
             value={back.qrPayload}
-            size={68}
-            level="M"
+            size={85}
+            level="L"
             style={{ display: "block" }}
           />
         </div>
@@ -334,11 +335,12 @@ const MAX_PRINT_IDS = 3;
 
 const rosterMembershipKey = (rows) =>
   rows
-    .map((adviser) =>
-      `${String(adviser.id)}:${(adviser.learners || [])
-        .map((learner) => String(learner.id))
-        .sort()
-        .join(",")}`,
+    .map(
+      (adviser) =>
+        `${String(adviser.id)}:${(adviser.learners || [])
+          .map((learner) => String(learner.id))
+          .sort()
+          .join(",")}`,
     )
     .sort()
     .join("|");
@@ -438,16 +440,17 @@ export function AutoId({ profile }) {
   const fetchLearners = async (showLoader = false) => {
     if (showLoader) setLoading(true);
     try {
-      const [studentResult, orgResult, profileResult, portalResult] = await Promise.all([
-        supabase
-          .from("students")
-          .select("*")
-          .eq("school_id", "126001")
-          .order("family_name", { ascending: true }),
-        supabase.from("org_chart").select("*"),
-        supabase.from("profiles").select("*"),
-        supabase.from("portal_profile").select("*"),
-      ]);
+      const [studentResult, orgResult, profileResult, portalResult] =
+        await Promise.all([
+          supabase
+            .from("students")
+            .select("*")
+            .eq("school_id", "126001")
+            .order("family_name", { ascending: true }),
+          supabase.from("org_chart").select("*"),
+          supabase.from("profiles").select("*"),
+          supabase.from("portal_profile").select("*"),
+        ]);
 
       if (studentResult.error) throw studentResult.error;
       if (orgResult.error) throw orgResult.error;
@@ -464,7 +467,10 @@ export function AutoId({ profile }) {
       const orgAdvisers = (orgResult.data || []).filter(isOrgAdviser);
       const allAdviserRows = orgAdvisers
         .map((adviser) => {
-          const legacyIds = legacyProfileIdsForOrgAdviser(adviser, legacyProfiles);
+          const legacyIds = legacyProfileIdsForOrgAdviser(
+            adviser,
+            legacyProfiles,
+          );
           return {
             ...adviser,
             learners: schoolLearners.filter((learner) =>
@@ -492,10 +498,7 @@ export function AutoId({ profile }) {
           (adviser) => adviserGradeKey(adviser.grade_level) === selectedGrade,
         );
       } else if (role !== "admin") {
-        const rosterResult = await loadAdvisoryRoster(
-          profile,
-          false,
-        );
+        const rosterResult = await loadAdvisoryRoster(profile, false);
         if (rosterResult.error) throw rosterResult.error;
 
         if (!rosterResult.orgAdviser) {
@@ -543,10 +546,25 @@ export function AutoId({ profile }) {
   const selectedAdviser = advisers.find(
     (adviser) => String(adviser.id) === String(filterAdviser),
   );
-  const adviserLearners = selectedAdviser?.learners || [];
+  const adviserLearners = [...(selectedAdviser?.learners || [])].sort(
+    (a, b) => {
+      const genderRank = (s) => {
+        const g = String(s.sex || s.gender || "").toLowerCase();
+        return g === "male" || g === "m" ? 0 : 1;
+      };
+      return (
+        genderRank(a) - genderRank(b) ||
+        String(a.family_name || "").localeCompare(String(b.family_name || ""))
+      );
+    },
+  );
 
   useEffect(() => {
-    if (!adviserLearners.some((learner) => String(learner.id) === String(selectedId))) {
+    if (
+      !adviserLearners.some(
+        (learner) => String(learner.id) === String(selectedId),
+      )
+    ) {
       setSelectedId(adviserLearners[0]?.id || "");
     }
     setSelectedThreeIds((current) => {
@@ -581,9 +599,7 @@ export function AutoId({ profile }) {
       learnerRaw.grade ||
       learnerRaw.gradeLevel;
     const enrolledSY = learnerRaw.school_year || learnerRaw.sy || null;
-    const validity =
-      deriveValidity(enrolledSY) ||
-      currentSchoolYearValidity();
+    const validity = deriveValidity(enrolledSY) || currentSchoolYearValidity();
     const yearToken = deriveYearToken(enrolledSY);
     const gt = gradeTag(effectiveGrade);
     const seqNum = String(learnerIdx >= 0 ? learnerIdx + 1 : 1).padStart(
@@ -612,17 +628,7 @@ export function AutoId({ profile }) {
     const contactNum = learnerRaw.contact_number || "N/A";
     const lrn = learnerRaw.lrn || "";
     const photoUrl = learnerRaw.photo_url || null;
-    const qrPayload = JSON.stringify({
-      lrn,
-      studentId: studentIdFmt,
-      name: fullName,
-      gradeSection: gradeSectionStr,
-      validity,
-      address,
-      guardian: guardName,
-      contact: contactNum,
-      status: "VALID ID",
-    });
+    const qrPayload = `ENROLLED & VALIDATED\nLRN:${lrn}\n${fullName}\n${gradeSectionStr}\n${validity}\nIECES`;
 
     return {
       enrolledSY,
@@ -652,12 +658,17 @@ export function AutoId({ profile }) {
   const qrPayload = backData.qrPayload;
 
   const cardStyle = (bgPos) => ({
-    width: `${CARD_WIDTH}px`, height: `${CARD_HEIGHT}px`,
+    width: `${CARD_WIDTH}px`,
+    height: `${CARD_HEIGHT}px`,
     backgroundImage: `url(${idTemplate})`,
-    backgroundPosition: bgPos, backgroundSize: `${CARD_WIDTH * 2}px ${CARD_HEIGHT}px`,
-    backgroundRepeat: "no-repeat", position: "relative",
-    borderRadius: "16px", boxShadow: "0 8px 28px rgba(0,0,0,0.22)",
-    overflow: "hidden", flexShrink: 0,
+    backgroundPosition: bgPos,
+    backgroundSize: `${CARD_WIDTH * 2}px ${CARD_HEIGHT}px`,
+    backgroundRepeat: "no-repeat",
+    position: "relative",
+    borderRadius: "16px",
+    boxShadow: "0 8px 28px rgba(0,0,0,0.22)",
+    overflow: "hidden",
+    flexShrink: 0,
   });
 
   // ── Build HTML for one card (front or back) at print scale ───────────────
@@ -676,8 +687,18 @@ export function AutoId({ profile }) {
     const gsSec = formatGradeSection(effectiveLearnerGrade, learnerRaw.section);
     const gradeSectionFs = `${Math.round(gradeSectionFontSize(effectiveLearnerGrade, learnerRaw.section) * PRINT_SCALE * 100) / 100}px`;
     const addr = learnerRaw.address || "Isabela City, Basilan";
-    const gname = (learnerRaw.guardian_contact_name || learnerRaw.guardian_name || learnerRaw.father_name || learnerRaw.mother_name || "N/A").toUpperCase();
-    const grel = (learnerRaw.guardian_type || learnerRaw.guardian_relationship || "PARENT/GUARDIAN").toUpperCase();
+    const gname = (
+      learnerRaw.guardian_contact_name ||
+      learnerRaw.guardian_name ||
+      learnerRaw.father_name ||
+      learnerRaw.mother_name ||
+      "N/A"
+    ).toUpperCase();
+    const grel = (
+      learnerRaw.guardian_type ||
+      learnerRaw.guardian_relationship ||
+      "PARENT/GUARDIAN"
+    ).toUpperCase();
     const cnum = learnerRaw.contact_number || "N/A";
     const lrnNum = learnerRaw.lrn || "";
     const photo = learnerRaw.photo_url || null;
@@ -691,63 +712,67 @@ export function AutoId({ profile }) {
     const bgH = Math.round(CARD_HEIGHT * S);
 
     const o = (t, l, w, h, s) =>
-      `position:absolute;top:${Math.round(t*VERTICAL_SCALE*S)}px;left:${Math.round(l*S)}px;` +
-      (w !== undefined ? `width:${Math.round(w*S)}px;` : "") +
-      (h !== undefined ? `height:${Math.round(h*VERTICAL_SCALE*S)}px;` : "") + s;
+      `position:absolute;top:${Math.round(t * VERTICAL_SCALE * S)}px;left:${Math.round(l * S)}px;` +
+      (w !== undefined ? `width:${Math.round(w * S)}px;` : "") +
+      (h !== undefined
+        ? `height:${Math.round(h * VERTICAL_SCALE * S)}px;`
+        : "") +
+      s;
 
-    const cardBase = `width:${W}px;height:${H}px;background-image:url('${templateDataUrl}');` +
+    const cardBase =
+      `width:${W}px;height:${H}px;background-image:url('${templateDataUrl}');` +
       `background-position:${bgPos};background-size:${bgW}px ${bgH}px;` +
-      `background-repeat:no-repeat;position:relative;border-radius:${Math.round(16*S)}px;overflow:hidden;flex-shrink:0;`;
+      `background-repeat:no-repeat;position:relative;border-radius:${Math.round(16 * S)}px;overflow:hidden;flex-shrink:0;`;
 
     if (side === "front") {
       const photoHtml = photo
         ? `<img src="${photo}" style="width:100%;height:100%;object-fit:cover;object-position:center top;display:block;background:#fff;" />`
         : "";
       return `<div style="${cardBase}">
-        <div style="${o(145,23,121,176,"border:"+Math.max(1,Math.round(5*S))+"px solid #D4AF37;box-sizing:border-box;border-radius:"+Math.round(8*S)+"px;overflow:hidden;background:#fff;")}">
+        <div style="${o(145, 23, 121, 176, "border:" + Math.max(1, Math.round(5 * S)) + "px solid #D4AF37;box-sizing:border-box;border-radius:" + Math.round(8 * S) + "px;overflow:hidden;background:#fff;")}">
           ${photoHtml}
         </div>
-        <div style="${o(183,190,140,undefined,"font-size:"+Math.round(10*S)+"px;font-weight:800;color:#111;font-family:monospace;letter-spacing:0.3px;line-height:1;")}">
+        <div style="${o(183, 190, 140, undefined, "font-size:" + Math.round(10 * S) + "px;font-weight:800;color:#111;font-family:monospace;letter-spacing:0.3px;line-height:1;")}">
           ${lrnNum}
         </div>
-        <div style="${o(212,229,110,undefined,"font-size:"+Math.round(9.5*S)+"px;font-weight:800;color:#111;font-family:monospace;white-space:nowrap;line-height:1;")}">
+        <div style="${o(212, 229, 110, undefined, "font-size:" + Math.round(9.5 * S) + "px;font-weight:800;color:#111;font-family:monospace;white-space:nowrap;line-height:1;")}">
           ${idFmt}
         </div>
-        <div style="${o(264,137,182,40,"display:flex;align-items:center;justify-content:center;font-size:"+gradeSectionFs+";font-weight:900;color:#7b0000;text-align:center;line-height:1.2;padding:0 "+Math.round(4*S)+"px;white-space:pre-line;overflow:hidden;")}">
+        <div style="${o(264, 137, 182, 40, "display:flex;align-items:center;justify-content:center;font-size:" + gradeSectionFs + ";font-weight:900;color:#7b0000;text-align:center;line-height:1.2;padding:0 " + Math.round(4 * S) + "px;white-space:pre-line;overflow:hidden;")}">
           ${gsSec.replace(/\n/g, "<br>")}
         </div>
-        <div style="${o(358,22,306,37,"display:flex;align-items:center;justify-content:center;font-size:"+nameFs+";font-weight:900;color:#000;text-align:center;letter-spacing:0.3px;line-height:1.1;padding:0 "+Math.round(8*S)+"px;overflow:hidden;")}">
+        <div style="${o(358, 22, 306, 37, "display:flex;align-items:center;justify-content:center;font-size:" + nameFs + ";font-weight:900;color:#000;text-align:center;letter-spacing:0.3px;line-height:1.1;padding:0 " + Math.round(8 * S) + "px;overflow:hidden;")}">
           ${fn}
         </div>
-        <div style="${o(434,22,306,undefined,"text-align:center;")}">
-          <div style="font-size:${Math.round(11*S)}px;font-weight:900;color:#D4AF37;text-transform:uppercase;letter-spacing:0.5px;text-shadow:0 1px 2px rgba(0,0,0,0.6);line-height:1.3;">
+        <div style="${o(434, 22, 306, undefined, "text-align:center;")}">
+          <div style="font-size:${Math.round(11 * S)}px;font-weight:900;color:#D4AF37;text-transform:uppercase;letter-spacing:0.5px;text-shadow:0 1px 2px rgba(0,0,0,0.6);line-height:1.3;">
             ${principalName.toUpperCase()}
           </div>
-          <div style="font-size:${Math.round(7.5*S)}px;font-weight:700;color:#fff;text-transform:uppercase;margin-top:${Math.round(2*S)}px;letter-spacing:0.5px;line-height:1.3;">
+          <div style="font-size:${Math.round(7.5 * S)}px;font-weight:700;color:#fff;text-transform:uppercase;margin-top:${Math.round(2 * S)}px;letter-spacing:0.5px;line-height:1.3;">
             ${principalPos}
           </div>
         </div>
       </div>`;
     } else {
       // back — QR as placeholder (cannot render QR in print window without lib)
-      const qrPay = JSON.stringify({ lrn: lrnNum, studentId: idFmt, name: fn, gradeSection: gsSec, validity: deriveValidity(sy) || currentSchoolYearValidity(), address: addr, guardian: gname, contact: cnum, status: "VALID ID" });
-      const qrSize = Math.round(68 * S);
+      const qrPay = `ENROLLED & VALIDATED\nLRN:${lrnNum}\n${fn}\n${gsSec}\n${deriveValidity(sy) || currentSchoolYearValidity()}\nIECES`;
+      const qrSize = Math.round(85 * S);
       // Encode QR as a URL for a QR API (Google Charts QR endpoint - works offline once cached, or use blank)
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(qrPay)}`;
       return `<div style="${cardBase}">
-        <div style="${o(170,23,301,undefined,"font-size:"+Math.round(9.5*S)+"px;font-weight:700;color:#111;line-height:1.4;")}">
+        <div style="${o(170, 23, 301, undefined, "font-size:" + Math.round(9.5 * S) + "px;font-weight:700;color:#111;line-height:1.4;")}">
           ${addr}
         </div>
-        <div style="${o(289,122,210,undefined,"font-size:"+Math.round(9*S)+"px;font-weight:800;color:#111;line-height:1;")}">
+        <div style="${o(289, 122, 210, undefined, "font-size:" + Math.round(9 * S) + "px;font-weight:800;color:#111;line-height:1;")}">
           ${gname}
         </div>
-        <div style="${o(315,145,187,undefined,"font-size:"+Math.round(9*S)+"px;font-weight:800;color:#111;line-height:1;")}">
+        <div style="${o(315, 145, 187, undefined, "font-size:" + Math.round(9 * S) + "px;font-weight:800;color:#111;line-height:1;")}">
           ${grel}
         </div>
-        <div style="${o(341,122,210,undefined,"font-size:"+Math.round(9*S)+"px;font-weight:800;color:#111;font-family:monospace;line-height:1;")}">
+        <div style="${o(341, 122, 210, undefined, "font-size:" + Math.round(9 * S) + "px;font-weight:800;color:#111;font-family:monospace;line-height:1;")}">
           ${cnum}
         </div>
-        <div style="${o(392,235,75,76,"display:flex;align-items:center;justify-content:center;background:#fff;border-radius:"+Math.round(4*S)+"px;")}">
+        <div style="${o(392, 235, 75, 76, "display:flex;align-items:center;justify-content:center;background:#fff;border-radius:" + Math.round(4 * S) + "px;")}">
           <img src="${qrUrl}" style="width:${qrSize}px;height:${qrSize}px;display:block;" />
         </div>
       </div>`;
@@ -764,9 +789,7 @@ export function AutoId({ profile }) {
       return selectedThreeIds
         .slice(0, requestedCount)
         .map((id) =>
-          adviserLearners.find(
-            (learner) => String(learner.id) === String(id),
-          ),
+          adviserLearners.find((learner) => String(learner.id) === String(id)),
         )
         .filter(Boolean)
         .map((learner) => ({
@@ -800,10 +823,9 @@ export function AutoId({ profile }) {
         : printMethod === "ordinary"
           ? pagesNeeded * 2
           : pagesNeeded;
-  const hasValidPrintSelection =
-    ["double", "triple"].includes(printMode)
-      ? printQueue.length === focusedPrintCount
-      : printQueue.length > 0;
+  const hasValidPrintSelection = ["double", "triple"].includes(printMode)
+    ? printQueue.length === focusedPrintCount
+    : printQueue.length > 0;
 
   // ── Print handler ─────────────────────────────────────────────────────────
   const handlePrint = async () => {
@@ -877,12 +899,12 @@ export function AutoId({ profile }) {
 
         const frontPage = `<div style="${pageStyle}">
             <div style="${titleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student ID (FRONTS)</div>
-            <div style="${subStyle}">Batch ${p+1} of ${pagesNeeded} • ${chunk.length} IDs • Print on Folio (8.5×13in)</div>
+            <div style="${subStyle}">Batch ${p + 1} of ${pagesNeeded} • ${chunk.length} IDs • Print on Folio (8.5×13in)</div>
             <div style="${gridStyle}">${frontsGrid}</div>
           </div>`;
         const backPage = `<div style="${pageStyle}">
             <div style="${titleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student ID (BACKS)</div>
-            <div style="${subStyle}">Batch ${p+1} of ${pagesNeeded} • ${
+            <div style="${subStyle}">Batch ${p + 1} of ${pagesNeeded} • ${
               printMethod === "ordinary"
                 ? "Cut and attach to the matching front in the same numbered position"
                 : "Long-edge duplex layout — back columns are mirrored for alignment"
@@ -924,11 +946,17 @@ export function AutoId({ profile }) {
           </div>`;
         } else {
           const focusedFronts = queue
-            .map(({ raw: learner, idx: learnerIdx }) => `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "front")}</div>`)
+            .map(
+              ({ raw: learner, idx: learnerIdx }) =>
+                `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "front")}</div>`,
+            )
             .join("");
           const focusedBacks = [...queue]
             .reverse()
-            .map(({ raw: learner, idx: learnerIdx }) => `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "back")}</div>`)
+            .map(
+              ({ raw: learner, idx: learnerIdx }) =>
+                `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "back")}</div>`,
+            )
             .join("");
           const focusedGridStyle = `display:grid;grid-template-columns:repeat(${queue.length},${W}px);gap:${gap}px;justify-content:center;`;
           pagesHtml = `<div style="${focusedPageStyle}">
@@ -959,11 +987,17 @@ export function AutoId({ profile }) {
 <body>${pagesHtml}</body>
 </html>`;
 
-      const win = window.open("", "_blank", "width=900,height=1200,menubar=no,toolbar=no,location=no");
+      const win = window.open(
+        "",
+        "_blank",
+        "width=900,height=1200,menubar=no,toolbar=no,location=no",
+      );
       win.document.write(html);
       win.document.close();
       win.focus();
-      setTimeout(() => { win.print(); }, 1200);
+      setTimeout(() => {
+        win.print();
+      }, 1200);
     } finally {
       setPrinting(false);
     }
@@ -971,7 +1005,10 @@ export function AutoId({ profile }) {
 
   if (loading) {
     return (
-      <div className="dash-card" style={{ textAlign: "center", padding: "40px" }}>
+      <div
+        className="dash-card"
+        style={{ textAlign: "center", padding: "40px" }}
+      >
         <p>Loading learner details for ID generation...</p>
       </div>
     );
@@ -984,18 +1021,22 @@ export function AutoId({ profile }) {
         <div className="dash-card-header">
           <h2>Auto ID Generator</h2>
           <p>
-            PNG-proportional IDs (2.53 × 3.375 in) — 9 per folio sheet.
-            For 40 learners: <strong>5 folio sheets</strong> (front + back pages per batch).
+            PNG-proportional IDs (2.53 × 3.375 in) — 9 per folio sheet. For 40
+            learners: <strong>5 folio sheets</strong> (front + back pages per
+            batch).
           </p>
         </div>
         <div className="dash-form">
-
           {/* ── Print Mode ── */}
           <div>
             <label className="adv-label">Print Mode</label>
             <select
               className="table-select"
-              style={{ width: "min(100%, 420px)", padding: "8px", marginTop: "4px" }}
+              style={{
+                width: "min(100%, 420px)",
+                padding: "8px",
+                marginTop: "4px",
+              }}
               value={printMode}
               onChange={(e) => setPrintMode(e.target.value)}
             >
@@ -1009,7 +1050,14 @@ export function AutoId({ profile }) {
           {/* ── Paper / assembly method ── */}
           <div>
             <label className="adv-label">Paper / Assembly Method</label>
-            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginTop: "4px" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                flexWrap: "wrap",
+                marginTop: "4px",
+              }}
+            >
               {[
                 {
                   v: "ordinary",
@@ -1069,8 +1117,11 @@ export function AutoId({ profile }) {
                 printed ID may come out at the far/bottom end of the output
                 tray. 2. Pick up the sheet without rotating it, then flip it
                 <strong> left to right</strong> like turning a book cover. 3.
-                Reinsert the <strong>same physical edge that contains the top
-                of the printed ID</strong> into the printer first. 4. Print the
+                Reinsert the{" "}
+                <strong>
+                  same physical edge that contains the top of the printed ID
+                </strong>{" "}
+                into the printer first. 4. Print the
                 <strong> back page only</strong>.
               </div>
               <div style={{ marginTop: "5px", color: "#475569" }}>
@@ -1089,7 +1140,9 @@ export function AutoId({ profile }) {
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
               >
-                {adviserLearners.length === 0 && <option value="">No learners assigned to this adviser</option>}
+                {adviserLearners.length === 0 && (
+                  <option value="">No learners assigned to this adviser</option>
+                )}
                 {adviserLearners.map((st) => (
                   <option key={st.id} value={st.id}>
                     {formatAutoIdName(st)} — {st.lrn || "No LRN"}
@@ -1128,7 +1181,11 @@ export function AutoId({ profile }) {
                           chosenSlot !== slot && String(id) === String(st.id),
                       );
                       return (
-                        <option key={st.id} value={st.id} disabled={isChosenElsewhere}>
+                        <option
+                          key={st.id}
+                          value={st.id}
+                          disabled={isChosenElsewhere}
+                        >
                           {formatAutoIdName(st)} — {st.lrn || "No LRN"}
                         </option>
                       );
@@ -1141,51 +1198,115 @@ export function AutoId({ profile }) {
 
           {/* ── Queue summary ── */}
           {printQueue.length > 0 && (
-            <div style={{ padding: "10px 14px", background: "#fef9ee", border: "1px solid #e8c84a", borderRadius: "8px", fontSize: "0.84rem", color: "#7a5a00" }}>
-              📄 <strong>{printQueue.length}</strong> learner ID{printQueue.length !== 1 ? "s" : ""} selected →{" "}
-              {["single", "double", "triple"].includes(printMode) && printMethod === "ordinary" ? (
-                <><strong>1</strong> print page with front/back pairs side by side → <strong>1</strong> sheet needed</>
+            <div
+              style={{
+                padding: "10px 14px",
+                background: "#fef9ee",
+                border: "1px solid #e8c84a",
+                borderRadius: "8px",
+                fontSize: "0.84rem",
+                color: "#7a5a00",
+              }}
+            >
+              📄 <strong>{printQueue.length}</strong> learner ID
+              {printQueue.length !== 1 ? "s" : ""} selected →{" "}
+              {["single", "double", "triple"].includes(printMode) &&
+              printMethod === "ordinary" ? (
+                <>
+                  <strong>1</strong> print page with front/back pairs side by
+                  side → <strong>1</strong> sheet needed
+                </>
               ) : (
                 <>
-                  <strong>{pagesNeeded * 2}</strong> print pages ({pagesNeeded} fronts + {pagesNeeded} backs) →{" "}
-                  <strong>{printMethod === "ordinary" ? pagesNeeded * 2 : pagesNeeded}</strong> sheet
-                  {(printMethod === "ordinary" ? pagesNeeded * 2 : pagesNeeded) !== 1 ? "s" : ""} needed ({printMethod === "ordinary" ? "ordinary glossy, cut & attach" : "manual duplex"})
+                  <strong>{pagesNeeded * 2}</strong> print pages ({pagesNeeded}{" "}
+                  fronts + {pagesNeeded} backs) →{" "}
+                  <strong>
+                    {printMethod === "ordinary" ? pagesNeeded * 2 : pagesNeeded}
+                  </strong>{" "}
+                  sheet
+                  {(printMethod === "ordinary"
+                    ? pagesNeeded * 2
+                    : pagesNeeded) !== 1
+                    ? "s"
+                    : ""}{" "}
+                  needed (
+                  {printMethod === "ordinary"
+                    ? "ordinary glossy, cut & attach"
+                    : "manual duplex"}
+                  )
                 </>
               )}
             </div>
           )}
           {["double", "triple"].includes(printMode) &&
             printQueue.length < focusedPrintCount && (
-            <div style={{ padding: "10px 14px", background: "#fff7ed", border: "1px solid #fdba74", borderRadius: "8px", fontSize: "0.84rem", color: "#9a3412" }}>
-              Select {focusedPrintCount} different learners before printing this layout.
-            </div>
-          )}
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "#fff7ed",
+                  border: "1px solid #fdba74",
+                  borderRadius: "8px",
+                  fontSize: "0.84rem",
+                  color: "#9a3412",
+                }}
+              >
+                Select {focusedPrintCount} different learners before printing
+                this layout.
+              </div>
+            )}
 
           {/* Auto-derived fields (single mode) */}
           {printMode === "single" && (
             <div className="form-row three-col">
               <div>
                 <label className="adv-label">Enrolled SY (auto)</label>
-                <input readOnly className="table-select readonly-input" style={{ width: "100%", padding: "8px" }} value={enrolledSY || "(not recorded)"} />
+                <input
+                  readOnly
+                  className="table-select readonly-input"
+                  style={{ width: "100%", padding: "8px" }}
+                  value={enrolledSY || "(not recorded)"}
+                />
               </div>
               <div>
                 <label className="adv-label">Validity (auto)</label>
-                <input readOnly className="table-select readonly-input" style={{ width: "100%", padding: "8px" }} value={validity} />
+                <input
+                  readOnly
+                  className="table-select readonly-input"
+                  style={{ width: "100%", padding: "8px" }}
+                  value={validity}
+                />
               </div>
               <div>
                 <label className="adv-label">Student ID (auto)</label>
-                <input readOnly className="table-select readonly-input" style={{ width: "100%", padding: "8px", fontFamily: "monospace" }} value={studentIdFmt} />
+                <input
+                  readOnly
+                  className="table-select readonly-input"
+                  style={{
+                    width: "100%",
+                    padding: "8px",
+                    fontFamily: "monospace",
+                  }}
+                  value={studentIdFmt}
+                />
               </div>
             </div>
           )}
 
           {/* Principal + Save */}
-          <div className="form-row" style={{ gridTemplateColumns: "1fr 1fr auto" }}>
+          <div
+            className="form-row"
+            style={{ gridTemplateColumns: "1fr 1fr auto" }}
+          >
             <div>
               <label className="adv-label">Principal Name</label>
               <input
-                type="text" className="table-select"
-                style={{ width: "100%", padding: "8px", textTransform: "uppercase" }}
+                type="text"
+                className="table-select"
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  textTransform: "uppercase",
+                }}
                 value={principalName}
                 onChange={(e) => setPrincipalName(e.target.value)}
                 placeholder="e.g. Jocelyn R. Buenaventura"
@@ -1193,14 +1314,41 @@ export function AutoId({ profile }) {
             </div>
             <div>
               <label className="adv-label">Principal Position</label>
-              <select className="table-select" style={{ width: "100%", padding: "8px" }} value={principalPos} onChange={(e) => setPrincipalPos(e.target.value)}>
-                {PRINCIPAL_POSITIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+              <select
+                className="table-select"
+                style={{ width: "100%", padding: "8px" }}
+                value={principalPos}
+                onChange={(e) => setPrincipalPos(e.target.value)}
+              >
+                {PRINCIPAL_POSITIONS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
               </select>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-end",
+              }}
+            >
               <button
                 onClick={savePrincipal}
-                style={{ padding: "8px 18px", background: savedMsg ? "#16a34a" : "#7b1a1a", color: "#fff", border: "none", borderRadius: "8px", fontWeight: "700", fontSize: "0.82rem", cursor: "pointer", whiteSpace: "nowrap", transition: "background 0.2s", height: "36px" }}
+                style={{
+                  padding: "8px 18px",
+                  background: savedMsg ? "#16a34a" : "#7b1a1a",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontWeight: "700",
+                  fontSize: "0.82rem",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  transition: "background 0.2s",
+                  height: "36px",
+                }}
               >
                 {savedMsg || "💾 Save Principal"}
               </button>
@@ -1208,33 +1356,64 @@ export function AutoId({ profile }) {
           </div>
 
           {/* Print button */}
-          {printQueue.length > 0 && <div
+          {printQueue.length > 0 && (
+            <div
+              style={{
+                width: "fit-content",
+                maxWidth: "100%",
+                padding: "9px 13px",
+                border: "1px solid #e2b93b",
+                borderLeft: "4px solid #b7791f",
+                borderRadius: "8px",
+                background: "#fff8dc",
+                color: "#744210",
+                fontSize: "0.82rem",
+                fontWeight: "700",
+              }}
+            >
+              📌 Sheets needed: <strong>{sheetsNeeded}</strong>
+            </div>
+          )}
+          <div
             style={{
-              width: "fit-content",
-              maxWidth: "100%",
-              padding: "9px 13px",
-              border: "1px solid #e2b93b",
-              borderLeft: "4px solid #b7791f",
-              borderRadius: "8px",
-              background: "#fff8dc",
-              color: "#744210",
-              fontSize: "0.82rem",
-              fontWeight: "700",
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              gap: "12px",
+              marginTop: "4px",
             }}
           >
-            📌 Sheets needed: <strong>{sheetsNeeded}</strong>
-          </div>}
-          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "12px", marginTop: "4px" }}>
-            {printing && <span style={{ fontSize: "0.82rem", color: "#7b1a1a", fontWeight: "600" }}>Preparing print…</span>}
+            {printing && (
+              <span
+                style={{
+                  fontSize: "0.82rem",
+                  color: "#7b1a1a",
+                  fontWeight: "600",
+                }}
+              >
+                Preparing print…
+              </span>
+            )}
             <button
               onClick={handlePrint}
               disabled={printing || !hasValidPrintSelection}
               style={{
                 padding: "10px 28px",
-                background: printing || !hasValidPrintSelection ? "#ccc" : "linear-gradient(135deg,#7b1a1a,#5a1010)",
-                color: "#f5c518", border: "none", borderRadius: "10px",
-                fontWeight: "800", fontSize: "0.88rem", cursor: printing || !hasValidPrintSelection ? "not-allowed" : "pointer",
-                letterSpacing: "0.04em", boxShadow: "0 4px 12px rgba(123,26,26,0.3)",
+                background:
+                  printing || !hasValidPrintSelection
+                    ? "#ccc"
+                    : "linear-gradient(135deg,#7b1a1a,#5a1010)",
+                color: "#f5c518",
+                border: "none",
+                borderRadius: "10px",
+                fontWeight: "800",
+                fontSize: "0.88rem",
+                cursor:
+                  printing || !hasValidPrintSelection
+                    ? "not-allowed"
+                    : "pointer",
+                letterSpacing: "0.04em",
+                boxShadow: "0 4px 12px rgba(123,26,26,0.3)",
               }}
             >
               Print ID
@@ -1245,11 +1424,19 @@ export function AutoId({ profile }) {
 
       {/* ── ID Preview ── */}
       <div ref={printRef} style={{ display: "none" }} aria-hidden>
-        <QRCodeSVG value={qrPayload} size={68} level="M" />
+        <QRCodeSVG value={qrPayload} size={85} level="L" />
       </div>
 
       {printMode === "single" && (
-        <div style={{ display: "flex", gap: "32px", justifyContent: "center", flexWrap: "wrap", padding: "20px 0" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "32px",
+            justifyContent: "center",
+            flexWrap: "wrap",
+            padding: "20px 0",
+          }}
+        >
           <IdCards front={frontData} back={backData} card={cardStyle} />
         </div>
       )}
@@ -1265,9 +1452,11 @@ export function AutoId({ profile }) {
                   : "Whole Class ID Preview"}
             </h2>
             <p>
-              Review the front and back of {printMode === "class"
+              Review the front and back of{" "}
+              {printMode === "class"
                 ? `all ${printQueue.length}`
-                : `the ${focusedPrintCount}`} learner IDs before printing.
+                : `the ${focusedPrintCount}`}{" "}
+              learner IDs before printing.
             </p>
           </div>
           <div style={{ display: "grid", gap: "24px" }}>

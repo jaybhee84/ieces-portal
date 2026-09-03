@@ -20,17 +20,18 @@ import {
 } from "../lib/demographicOptions";
 import { PHILIRI_READING_CATEGORIES } from "../lib/readingOptions";
 
-const addressWithBarangay = (address, barangay) => {
-  const current = String(address || "").trim();
-  if (!barangay) return current;
-  if (/Brgy\.\s*[^,]+/i.test(current)) {
-    return current.replace(/Brgy\.\s*[^,]+/i, `Brgy. ${barangay}`);
-  }
-  if (/Isabela City$/i.test(current)) {
-    const prefix = current.replace(/,?\s*Isabela City$/i, "").trim();
-    return `${prefix ? `${prefix}, ` : ""}Brgy. ${barangay}, Isabela City`;
-  }
-  return `${current ? `${current}, ` : ""}Brgy. ${barangay}, Isabela City`;
+const parseStreetFromAddress = (address) => {
+  const str = String(address || "").trim();
+  // Street is everything before "Brgy." if present
+  const beforeBrgy = str.split(/,?\s*Brgy\./i)[0].trim();
+  // Strip trailing "Isabela City" if no Brgy found
+  return beforeBrgy.replace(/,?\s*Isabela City$/i, "").trim();
+};
+
+const addressWithBarangay = (address, barangay, street) => {
+  if (!barangay) return String(address || "").trim();
+  const streetPart = String(street || "").trim();
+  return `${streetPart ? streetPart + ", " : ""}Brgy. ${barangay}, Isabela City, Basilan`;
 };
 
 const GUARDIAN_TYPES = [
@@ -198,6 +199,7 @@ export function AdvisoryClass({ profile }) {
               religion: student.religion || "",
               tribe: student.tribe || "",
               barangay: barangay === "—" ? "" : barangay,
+              street_address: parseStreetFromAddress(student.address),
               ...guardianDraft,
               contact_number: student.contact_number || "",
               reading_category: student.reading_category || "",
@@ -228,10 +230,10 @@ export function AdvisoryClass({ profile }) {
     if (!dirtyStudentIds.length) return;
     const invalidLrn = dirtyStudentIds.find((studentId) => {
       const lrn = String(demographicDrafts[studentId]?.lrn || "").trim();
-      return lrn && !/^\d{12}$/.test(lrn);
+      return lrn && !/^\d{13}$/.test(lrn);
     });
     if (invalidLrn) {
-      setMessage("LRN must contain exactly 12 digits, or be left blank.");
+      setMessage("LRN must contain exactly 13 digits, or be left blank.");
       return;
     }
     const invalidMiddleInitial = dirtyStudentIds.find((studentId) => {
@@ -268,7 +270,7 @@ export function AdvisoryClass({ profile }) {
           middle_initial: draft?.middle_initial || null,
           religion: draft?.religion || null,
           tribe: draft?.tribe || null,
-          address: addressWithBarangay(student?.address, draft?.barangay),
+          address: addressWithBarangay(student?.address, draft?.barangay, draft?.street_address),
           guardian_type: draft?.guardian_type || null,
           guardian_contact_name:
             draft?.guardian_contact_name?.trim() || null,
@@ -561,6 +563,7 @@ export function AdvisoryClass({ profile }) {
                 <th rowSpan="2">Religion</th>
                 <th rowSpan="2">Tribe</th>
                 <th rowSpan="2">Barangay</th>
+                <th rowSpan="2">Street / Sitio</th>
                 <th colSpan="2">Parents / Guardian</th>
                 <th rowSpan="2">Contact Number</th>
                 <th rowSpan="2">BMI Status</th>
@@ -639,12 +642,12 @@ export function AdvisoryClass({ profile }) {
                           key={`${st.id}:${st.lrn || ""}`}
                           type="text"
                           inputMode="numeric"
-                          maxLength={12}
+                          maxLength={13}
                           defaultValue={draft.lrn || ""}
                           onInput={(event) => {
                             const numericLrn = event.currentTarget.value
                               .replace(/\D/g, "")
-                              .slice(0, 12);
+                              .slice(0, 13);
                             event.currentTarget.value = numericLrn;
                             updateDemographicDraft(
                               st.id,
@@ -654,7 +657,7 @@ export function AdvisoryClass({ profile }) {
                           }}
                           disabled={savingDemographics}
                           autoComplete="off"
-                          placeholder="12-digit LRN"
+                          placeholder="13-digit LRN"
                           aria-label={`LRN for ${displayName}`}
                           className="advisory-lrn-input min-w-[130px] font-mono"
                         />
@@ -712,6 +715,19 @@ export function AdvisoryClass({ profile }) {
                             <option key={option} value={option}>{option}</option>
                           ))}
                         </select>
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          value={draft.street_address || ""}
+                          onChange={(event) =>
+                            updateDemographicDraft(st.id, "street_address", event.target.value)
+                          }
+                          disabled={savingDemographics}
+                          placeholder="Zone, Street, Sitio"
+                          aria-label={`Street address for ${displayName}`}
+                          className="advisory-contact-input min-w-[160px]"
+                        />
                       </td>
                       <td className="min-w-[165px]">
                         <select
