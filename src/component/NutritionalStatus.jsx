@@ -22,11 +22,6 @@ const HFA_ROW_LABELS = {
   Tall: "Tall",
 };
 
-const filenameSlug = (value) =>
-  String(value || "")
-    .replace(/[^a-zA-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
 const titleCase = (value) =>
   String(value || "")
     .toLowerCase()
@@ -57,95 +52,6 @@ const REPORT_COLUMNS = [
   "Nutritional\nStatus",
   "Height-for-Age",
 ];
-
-const downloadReportExcel = (rows, meta, bazSexTally, hazSexTally, preparedByName) => {
-  const colCount = REPORT_COLUMNS.length;
-  const headerCells = REPORT_COLUMNS.map(
-    (label) => `<th>${label.replace(/\n/g, "<br/>")}</th>`,
-  ).join("");
-  const bodyRows = rows
-    .map(
-      ({ student, report }, index) => `<tr>
-        <td>${index + 1}</td>
-        <td style="text-align:left">${learnerDisplayName(student)}</td>
-        <td>${formatDateMMDDYYYY(student.birthdate)}</td>
-        <td>${report.weightKg ?? "—"}</td>
-        <td>${formatNumber(report.heightMeters, 2)}</td>
-        <td>${report.sex}</td>
-        <td>${formatNumber(report.heightSquaredMeters, 4)}</td>
-        <td>${report.ageYearMonth}</td>
-        <td>${formatNumber(report.bmi, 1)}</td>
-        <td>${report.bmiStatus}</td>
-        <td>${report.hfaStatus}</td>
-      </tr>`,
-    )
-    .join("");
-
-  const tallyCells = (label, m, f, total) =>
-    `<td style="text-align:left">${label}</td><td>${m}</td><td>${f}</td><td>${total}</td>`;
-  const bazTallyLines = [
-    ["No. of Cases", bazSexTally.totalM, bazSexTally.totalF, bazSexTally.total],
-    ...BAZ_ORDER.map((label) => [
-      label,
-      bazSexTally.counts[label].M,
-      bazSexTally.counts[label].F,
-      bazSexTally.counts[label].M + bazSexTally.counts[label].F,
-    ]),
-  ];
-  const hazTallyLines = [
-    ["No. of Cases", hazSexTally.totalM, hazSexTally.totalF, hazSexTally.total],
-    ...HAZ_ORDER.map((label) => [
-      HFA_ROW_LABELS[label] || label,
-      hazSexTally.counts[label].M,
-      hazSexTally.counts[label].F,
-      hazSexTally.counts[label].M + hazSexTally.counts[label].F,
-    ]),
-  ];
-  const tallyRowsHtml = bazTallyLines
-    .map((bazLine, index) => {
-      const hazLine = hazTallyLines[index];
-      return `<tr>${tallyCells(...bazLine)}<td style="border:0"></td>${hazLine ? tallyCells(...hazLine) : ""}</tr>`;
-    })
-    .join("");
-
-  const html = `<html><head><meta charset="UTF-8"></head><body>
-    <table border="1">
-      <tr><td colspan="${colCount}" style="text-align:center;font-weight:bold;font-size:14pt">NUTRITIONAL STATUS REPORT</td></tr>
-      <tr><td colspan="${colCount}" style="text-align:center;font-weight:bold">${SCHOOL_NAME}</td></tr>
-      <tr><td colspan="${colCount}" style="text-align:center">${SCHOOL_ADDRESS}</td></tr>
-      <tr><td colspan="${colCount}" style="text-align:center">${meta.schoolYearLabel}</td></tr>
-      <tr><td colspan="${Math.ceil(colCount / 2)}">Date of Weighing: ${meta.dateOfWeighing}</td><td colspan="${Math.floor(colCount / 2)}">Grade/Class: ${meta.gradeClassLabel}</td></tr>
-      <tr>${headerCells}</tr>
-      ${bodyRows}
-    </table>
-    <br/>
-    <table border="1">
-      <tr><th>Body Mass Index</th><th>M</th><th>F</th><th>T</th><td style="border:0"></td><th>HFA</th><th>M</th><th>F</th><th>TOTAL</th></tr>
-      ${tallyRowsHtml}
-    </table>
-    <br/>
-    <table>
-      <tr><td>Body Mass Index = Weight (kgs) / Height squared (m²)</td></tr>
-    </table>
-    <br/><br/>
-    <table>
-      <tr><td>Prepared by:</td></tr>
-      <tr><td>&nbsp;</td></tr>
-      <tr><td style="font-weight:bold;text-align:center">${preparedByName}</td></tr>
-      <tr><td style="text-align:center">Class Adviser</td></tr>
-    </table>
-  </body></html>`;
-
-  const blob = new Blob([html], { type: "application/vnd.ms-excel" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `IECES_NS_Report_${meta.periodLabel}_${filenameSlug(meta.gradeClassLabel)}_SY${meta.schoolYear}.xls`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-};
 
 const PERIOD_OPTIONS = [
   { value: "baseline", label: "Baseline" },
@@ -216,6 +122,7 @@ export function NutritionalStatus({ profile }) {
   const [message, setMessage] = useState("");
   const [orgAdviser, setOrgAdviser] = useState(null);
   const [period, setPeriod] = useState("baseline");
+  const [exporting, setExporting] = useState(false);
   const loadedProfileKeyRef = useRef("");
 
   const fetchStudents = async (showLoader = false) => {
@@ -326,6 +233,26 @@ export function NutritionalStatus({ profile }) {
     orgAdviser ? orgAdviserName(orgAdviser) : profileName(profile)
   ).toUpperCase();
 
+  const downloadExcel = async () => {
+    setExporting(true);
+    try {
+      const { downloadNutritionReportExcel } = await import("../lib/nutritionReportExcel.mjs");
+      downloadNutritionReportExcel(
+        reportRows.map(({ student, report }) => ({
+          name: learnerDisplayName(student),
+          birthdate: student.birthdate,
+          report,
+        })),
+        reportMeta,
+        preparedByName,
+      );
+    } catch (error) {
+      setMessage(`Unable to download Excel: ${error.message}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div>
       <div className="dash-card-header">
@@ -358,17 +285,10 @@ export function NutritionalStatus({ profile }) {
           <button
             type="button"
             className="nsr-btn-outline"
-            onClick={() =>
-              downloadReportExcel(
-                reportRows,
-                reportMeta,
-                bazSexTally,
-                hazSexTally,
-                preparedByName,
-              )
-            }
+            onClick={downloadExcel}
+            disabled={exporting}
           >
-            <Download size={16} /> Download Excel
+            <Download size={16} /> {exporting ? "Preparing Excel…" : "Download Excel"}
           </button>
           <button type="button" onClick={() => window.print()}>
             <Printer size={16} /> Print Report
