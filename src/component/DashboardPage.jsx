@@ -5,6 +5,7 @@ import "../styles/DashboardPage.css";
 import { EnrollmentForm } from "./EnrollmentForm";
 import { EnrollmentDataTab } from "./EnrollmentDataTab";
 import { AdvisoryClass } from "./AdvisoryClass";
+import { NutritionalStatus } from "./NutritionalStatus";
 import { TransferLearner } from "./TransferLearner";
 import { AutoId } from "./AutoId"; // <--- IMPORT AUTO ID
 import { Form137 } from "./Form137";
@@ -460,6 +461,15 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               </button>
             )}
 
+            {isAdviser && (
+              <button
+                className={`nav-item ${activeTab === "nutrition" ? "active" : ""}`}
+                onClick={() => setActiveTab("nutrition")}
+              >
+                <span className="nav-icon">🥗</span> Nutritional Status
+              </button>
+            )}
+
             <button
               className={`nav-item ${activeTab === "data" ? "active" : ""}`}
               onClick={() => setActiveTab("data")}
@@ -525,6 +535,11 @@ export default function DashboardPage({ session, userSession, onLogout }) {
             </div>
           )}
           {activeTab === "form137" && isAdviser && <Form137 profile={effectiveProfile} />}
+          {isAdviser && (
+            <div style={{ display: activeTab === "nutrition" ? "block" : "none" }}>
+              <NutritionalStatus profile={effectiveProfile} />
+            </div>
+          )}
           <div style={{ display: activeTab === "data" ? "block" : "none" }}>
             <EnrollmentDataTab />
           </div>

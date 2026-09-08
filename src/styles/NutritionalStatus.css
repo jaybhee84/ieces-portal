@@ -1,0 +1,50 @@
+.nsr-period-select { display: flex; align-items: center; gap: 6px; margin-right: auto; font-size: .8rem; color: #4a4040; }
+.nsr-period-select span { font-weight: 700; }
+.nsr-period-select select { min-height: 36px; border: 1px solid #d8c9c3; border-radius: 6px; padding: 6px 10px; background: #fff; color: #271919; font-weight: 600; }
+
+.nsr-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: -6px 0 14px; }
+.nsr-toolbar button { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; border: 1px solid #7b1a1a; background: #7b1a1a; color: #fff; padding: 8px 14px; border-radius: 6px; font-weight: 700; font-size: .8rem; cursor: pointer; }
+.nsr-toolbar button:hover { background: #641414; }
+.nsr-toolbar button.nsr-btn-outline { background: #fff; color: #7b1a1a; }
+.nsr-toolbar button.nsr-btn-outline:hover { background: #faf1f1; }
+
+.nsr-report { background: #fff; border: 1px solid #eee5e1; border-radius: 10px; padding: 22px 26px; box-shadow: 0 2px 14px rgba(123, 26, 26, .07); }
+.nsr-report-header { position: relative; text-align: center; margin-bottom: 14px; }
+.nsr-seal { display: block; margin: 0 auto 4px; width: 56px; height: 56px; object-fit: contain; }
+.nsr-report-header h2 { margin: 0; font-size: 1.15rem; font-weight: 800; letter-spacing: .02em; color: #211b1b; }
+.nsr-report-header h3 { margin: 2px 0 0; font-size: 1rem; font-weight: 800; color: #211b1b; }
+.nsr-report-header p { margin: 1px 0 0; font-size: .78rem; color: #4a4040; }
+
+.nsr-report-meta { display: flex; justify-content: space-between; align-items: baseline; font-size: .8rem; color: #211b1b; margin: 12px 0 8px; flex-wrap: wrap; gap: 6px; }
+.nsr-report-meta strong { font-weight: 700; }
+
+.nsr-report-table-wrap { overflow-x: auto; }
+.nsr-report-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: .78rem; }
+.nsr-report-table th, .nsr-report-table td { border: 1px solid #999; padding: 5px 8px; text-align: center; }
+.nsr-report-table th { background: #f2ede9; font-weight: 700; color: #3a2f2f; }
+.nsr-report-table td.nsr-name { text-align: left; font-weight: 600; }
+.nsr-report-table td.nsr-no { color: #1d4ed8; font-weight: 700; }
+
+.nsr-tally-section { display: flex; align-items: flex-start; justify-content: center; gap: 18px; flex-wrap: wrap; margin-top: 18px; }
+.nsr-tally-table { border-collapse: collapse; font-size: .76rem; min-width: 260px; }
+.nsr-tally-table th, .nsr-tally-table td { border: 1px solid #999; padding: 4px 10px; text-align: center; }
+.nsr-tally-table th { background: #f2ede9; font-weight: 700; color: #3a2f2f; }
+.nsr-tally-table td.nsr-tally-label { text-align: left; font-weight: 600; }
+
+.nsr-bmi-formula { align-self: center; border: 1px solid #333; border-radius: 4px; padding: 10px 16px; text-align: center; font-size: .78rem; color: #211b1b; }
+.nsr-bmi-fraction { display: inline-flex; flex-direction: column; align-items: center; margin-top: 6px; }
+.nsr-bmi-fraction span:first-child { padding-bottom: 3px; border-bottom: 1px solid #64748b; }
+.nsr-bmi-fraction span:last-child { padding-top: 3px; }
+
+.nsr-signature { max-width: 260px; margin: 28px 0 4px auto; text-align: center; font-size: .8rem; color: #211b1b; }
+.nsr-signature-label { display: block; text-align: left; margin-bottom: 26px; }
+.nsr-signature-line { border-top: 1px solid #333; margin-bottom: 4px; }
+.nsr-signature-name { display: block; font-weight: 800; letter-spacing: .02em; }
+.nsr-signature-title { display: block; font-size: .74rem; color: #4a4040; }
+
+@media print {
+  .dash-header, .dash-sidebar, .nsr-toolbar, .dash-card-header, .nsr-summary { display: none !important; }
+  .dash-root, .dash-body, .dash-content { display: block !important; width: auto !important; height: auto !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
+  .nsr-report { border: 0; box-shadow: none; padding: 0; }
+  @page { size: legal portrait; margin: .35in; }
+}

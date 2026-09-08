@@ -1,4 +1,10 @@
-import { calcBMI, getBMIStatus, getHAZStatus } from "./growth/bmi";
+import {
+  ageInMonths,
+  calcBMI,
+  getBMIStatus,
+  getHAZStatus,
+  normalizeHeightMeters,
+} from "./growth/bmi";
 
 const abbreviatedLegacyName = (value) => {
   const name = String(value || "").trim();
@@ -184,20 +190,32 @@ const normalizedRecords = (value) => {
   }
 };
 
-const latestMeasurement = (learner) => {
-  const records = normalizedRecords(learner?.records).filter(
+const measuredRecords = (learner) =>
+  normalizedRecords(learner?.records).filter(
     (record) => record?.weight || record?.height,
   );
-  if (!records.length && (learner?.weight || learner?.height)) return learner;
-  return records
-    .sort((left, right) =>
-      String(left.date || "").localeCompare(String(right.date || "")),
-    )
-    .at(-1);
+
+// Baseline is the earliest weighing of the school year. Endline weighing has
+// not started yet for any learner this school year, so it always renders
+// blank for now — the `records` array has no reliable period tag, and extra
+// array entries seen so far are re-saved/synced duplicates of the Baseline
+// weighing rather than a real second round. Once the school actually starts
+// recording Endline weighings, this should read the later-dated record
+// instead of returning {} unconditionally.
+const measurementForPeriod = (learner, period) => {
+  if (period !== "baseline") return {};
+  const records = measuredRecords(learner);
+  if (!records.length) {
+    return learner?.weight || learner?.height ? learner : {};
+  }
+  return [...records].sort((left, right) =>
+    String(left.date || "").localeCompare(String(right.date || "")),
+  )[0];
 };
 
-export const learnerNutrition = (learner) => {
-  const record = latestMeasurement(learner) || {};
+const latestMeasurement = (learner) => measurementForPeriod(learner, "endline");
+
+const computeNutritionStatus = (learner, record) => {
   const sex = String(learner?.gender || learner?.sex || "")
     .trim()
     .toUpperCase()
@@ -221,6 +239,12 @@ export const learnerNutrition = (learner) => {
     record.date,
     fallbackMonths,
   )?.label;
+  return { computedBmi, computedHfa };
+};
+
+export const learnerNutrition = (learner) => {
+  const record = latestMeasurement(learner);
+  const { computedBmi, computedHfa } = computeNutritionStatus(learner, record);
   return {
     bmi:
       learner?.bmi_status ||
@@ -237,6 +261,54 @@ export const learnerNutrition = (learner) => {
       record.haz?.label ||
       computedHfa ||
       "—",
+  };
+};
+
+// Nutritional status for a specific weighing period (Baseline or Endline),
+// used by the printable Nutritional Status Report so teachers can compare
+// a learner's status at the start and end of the school year.
+export const learnerNutritionForPeriod = (learner, period = "endline") => {
+  const record = measurementForPeriod(learner, period);
+  const { computedBmi, computedHfa } = computeNutritionStatus(learner, record);
+  return {
+    bmi:
+      record.bmi_status || record.status?.label || record.baz?.label || computedBmi || "—",
+    hfa:
+      record.hfa_status || record.haz_status || record.haz?.label || computedHfa || "—",
+  };
+};
+
+// Detailed measurement figures for the printable Nutritional Status Report
+// (birthday, weight, height, BMI, "year.month" age) beyond the status badges
+// returned by learnerNutrition. Pass period "baseline" or "endline" to pick
+// which weighing the report should read from.
+export const learnerNutritionReport = (learner, period = "endline") => {
+  const record = measurementForPeriod(learner, period);
+  const nutrition = learnerNutritionForPeriod(learner, period);
+  const sex = String(learner?.gender || learner?.sex || "")
+    .trim()
+    .toUpperCase()
+    .startsWith("F")
+    ? "F"
+    : "M";
+  const hasMeasurement = Boolean(record.weight || record.height);
+  const heightMeters = normalizeHeightMeters(record.height);
+  const bmi = calcBMI(record.weight, record.height);
+  const months = hasMeasurement
+    ? ageInMonths(learner?.birthdate, record.date) ??
+      (Number(learner?.age) > 0 ? Math.round(Number(learner.age) * 12) : null)
+    : null;
+
+  return {
+    weightKg: record.weight ? Number(record.weight) : null,
+    heightMeters,
+    heightSquaredMeters: heightMeters != null ? heightMeters * heightMeters : null,
+    sex,
+    ageYearMonth: months != null ? `${Math.floor(months / 12)}.${months % 12}` : "—",
+    bmi,
+    measurementDate: record.date || "",
+    bmiStatus: nutrition.bmi,
+    hfaStatus: nutrition.hfa,
   };
 };
 

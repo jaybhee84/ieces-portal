@@ -230,10 +230,10 @@ export function AdvisoryClass({ profile }) {
     if (!dirtyStudentIds.length) return;
     const invalidLrn = dirtyStudentIds.find((studentId) => {
       const lrn = String(demographicDrafts[studentId]?.lrn || "").trim();
-      return lrn && !/^\d{13}$/.test(lrn);
+      return lrn && !/^\d{12}$/.test(lrn);
     });
     if (invalidLrn) {
-      setMessage("LRN must contain exactly 13 digits, or be left blank.");
+      setMessage("LRN must contain exactly 12 digits, or be left blank.");
       return;
     }
     const incompleteGuardian = dirtyStudentIds.find((studentId) => {
@@ -627,12 +627,12 @@ export function AdvisoryClass({ profile }) {
                           key={`${st.id}:${st.lrn || ""}`}
                           type="text"
                           inputMode="numeric"
-                          maxLength={13}
+                          maxLength={12}
                           defaultValue={draft.lrn || ""}
                           onInput={(event) => {
                             const numericLrn = event.currentTarget.value
                               .replace(/\D/g, "")
-                              .slice(0, 13);
+                              .slice(0, 12);
                             event.currentTarget.value = numericLrn;
                             updateDemographicDraft(
                               st.id,
@@ -642,7 +642,7 @@ export function AdvisoryClass({ profile }) {
                           }}
                           disabled={savingDemographics}
                           autoComplete="off"
-                          placeholder="13-digit LRN"
+                          placeholder="12-digit LRN"
                           aria-label={`LRN for ${displayName}`}
                           className="advisory-lrn-input min-w-[130px] font-mono"
                         />

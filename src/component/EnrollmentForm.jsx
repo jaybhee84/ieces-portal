@@ -312,7 +312,7 @@ export function EnrollmentForm({ profile }) {
 
   useEffect(() => {
     const lrn = formData.lrn.trim();
-    if (lrn.length !== 13) {
+    if (lrn.length !== 12) {
       setExistingLearnerId(null);
       setLrnLookupMessage("");
       setLrnDuplicateCount(0);
@@ -828,18 +828,18 @@ export function EnrollmentForm({ profile }) {
 
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
-                  LRN (13 Digits Only)
+                  LRN (12 Digits Only)
                 </label>
                 <input
                   type="text"
                   inputMode="numeric"
-                  maxLength="13"
-                  pattern="\d{13}"
+                  maxLength="12"
+                  pattern="\d{12}"
                   placeholder="123456789012"
                   value={formData.lrn}
                   onChange={(e) => {
                     const val = e.target.value;
-                    if (/^\d*$/.test(val)) {
+                    if (/^\d{0,12}$/.test(val)) {
                       setFormData({ ...formData, lrn: val });
                     }
                   }}
