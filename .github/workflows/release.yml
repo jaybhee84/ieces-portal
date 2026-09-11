@@ -50,14 +50,14 @@ jobs:
       - name: Build and Publish Electron App
         if: steps.version.outputs.tag != ''
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npm run electron:build:publish
 
       - name: Publish GitHub Release
         if: steps.version.outputs.tag != ''
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          gh release edit "${{ steps.version.outputs.tag }}" --draft=false --latest
+          gh release edit "${{ steps.version.outputs.tag }}" --draft=false --latest --repo buzzjay84/ieces-portal
