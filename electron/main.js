@@ -3,6 +3,8 @@ const path = require('path');
 const { autoUpdater } = require('electron-updater');
 
 let mainWindow;
+const cleanupPrinting = require('./printing').setupPrinting(() => mainWindow);
+app.on('before-quit', cleanupPrinting);
 
 // ── Icon Path Resolution ──────────────────────────────────────────────────────
 const getAppIcon = () => {
@@ -207,7 +209,7 @@ function createWindow() {
     mainWindow.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'));
   }
 
-  mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.on('closed', () => { cleanupPrinting(); mainWindow = null; });
 }
 
 app.whenReady().then(() => {

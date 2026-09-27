@@ -1,3 +1,4 @@
+import { usePrintPreview } from "./PrintPreview/PrintPreviewContext";
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { QRCodeSVG } from "qrcode.react";
@@ -115,9 +116,10 @@ function resolveGuardianDisplay(learnerRaw) {
     const parentContacts = parents.map((parent) => parent.contact);
     // Older rows have one shared contact. If its relationship was not saved,
     // show that known number once instead of presenting misleading N/A values.
-    const contact = parentContacts.every((value) => value === "N/A") && legacyContact
-      ? legacyContact
-      : parentContacts.join(" | ");
+    const contact =
+      parentContacts.every((value) => value === "N/A") && legacyContact
+        ? legacyContact
+        : parentContacts.join(" | ");
     return {
       name: parents.map((parent) => parent.name).join(" | "),
       relation: parents.map((parent) => parent.relation).join(" | "),
@@ -136,7 +138,9 @@ function resolveGuardianDisplay(learnerRaw) {
         "PARENT/GUARDIAN"
       ).toUpperCase(),
       contact:
-        learnerRaw.guardian_contact_number || learnerRaw.contact_number || "N/A",
+        learnerRaw.guardian_contact_number ||
+        learnerRaw.contact_number ||
+        "N/A",
     };
   }
   return {
@@ -421,11 +425,14 @@ const rosterMembershipKey = (rows) =>
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export function AutoId({ profile }) {
+  const { requestPrint } = usePrintPreview();
   const [learners, setLearners] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [selectedThreeIds, setSelectedThreeIds] = useState([]);
   const [printMode, setPrintMode] = useState("single"); // "single" | "double" | "triple" | "class"
-  const [printMethod, setPrintMethod] = useState("ordinary");
+  const [classPrintMethod, setClassPrintMethod] = useState("duplex");
+  // Only Whole Class offers a paper choice; 1–3 IDs always print duplex.
+  const printMethod = printMode === "class" ? classPrintMethod : "duplex";
   const [filterAdviser, setFilterAdviser] = useState("");
   const [advisers, setAdvisers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -753,8 +760,11 @@ export function AutoId({ profile }) {
     const gsSec = formatGradeSection(effectiveLearnerGrade, learnerRaw.section);
     const gradeSectionFs = `${Math.round(gradeSectionFontSize(effectiveLearnerGrade, learnerRaw.section) * PRINT_SCALE * 100) / 100}px`;
     const addr = learnerRaw.address || "Isabela City, Basilan";
-    const { name: gname, relation: grel, contact: cnum } =
-      resolveGuardianDisplay(learnerRaw);
+    const {
+      name: gname,
+      relation: grel,
+      contact: cnum,
+    } = resolveGuardianDisplay(learnerRaw);
     const lrnNum = learnerRaw.lrn || "";
     const photo = learnerRaw.photo_url || null;
     const nameFs = `${Math.round(learnerNameFontSize(fn) * PRINT_SCALE * 100) / 100}px`;
@@ -775,7 +785,7 @@ export function AutoId({ profile }) {
       s;
 
     const cardBase =
-      `width:${W}px;height:${H}px;background-image:url('${templateDataUrl}');` +
+      `width:${W}px;height:${H}px;` +
       `background-position:${bgPos};background-size:${bgW}px ${bgH}px;` +
       `background-repeat:no-repeat;position:relative;border-radius:${Math.round(16 * S)}px;overflow:hidden;flex-shrink:0;`;
 
@@ -783,7 +793,7 @@ export function AutoId({ profile }) {
       const photoHtml = photo
         ? `<img src="${photo}" style="width:100%;height:100%;object-fit:cover;object-position:center top;display:block;background:#fff;" />`
         : "";
-      return `<div style="${cardBase}">
+      return `<div class="id-card" style="${cardBase}">
         <div style="${o(145, 23, 121, 176, "border:" + Math.max(1, Math.round(5 * S)) + "px solid #D4AF37;box-sizing:border-box;border-radius:" + Math.round(8 * S) + "px;overflow:hidden;background:#fff;")}">
           ${photoHtml}
         </div>
@@ -814,7 +824,7 @@ export function AutoId({ profile }) {
       const qrSize = Math.round(85 * S);
       // Encode QR as a URL for a QR API (Google Charts QR endpoint - works offline once cached, or use blank)
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(qrPay)}`;
-      return `<div style="${cardBase}">
+      return `<div class="id-card" style="${cardBase}">
         <div style="${o(170, 23, 301, undefined, "font-size:" + Math.round(9.5 * S) + "px;font-weight:700;color:#111;line-height:1.4;")}">
           ${addr}
         </div>
@@ -872,12 +882,9 @@ export function AutoId({ profile }) {
   const sheetsNeeded =
     printQueue.length === 0
       ? 0
-      : ["single", "double", "triple"].includes(printMode) &&
-          printMethod === "ordinary"
-        ? 1
-        : printMethod === "ordinary"
-          ? pagesNeeded * 2
-          : pagesNeeded;
+      : printMethod === "ordinary"
+        ? pagesNeeded * 2
+        : pagesNeeded;
   const hasValidPrintSelection = ["double", "triple"].includes(printMode)
     ? printQueue.length === focusedPrintCount
     : printQueue.length > 0;
@@ -902,7 +909,7 @@ export function AutoId({ profile }) {
     try {
       // Convert template to data-URL
       const toDataUrl = (url) =>
-        new Promise((res) => {
+        new Promise((res, reject) => {
           const img = new window.Image();
           img.crossOrigin = "anonymous";
           img.onload = () => {
@@ -912,6 +919,10 @@ export function AutoId({ profile }) {
             c.getContext("2d").drawImage(img, 0, 0);
             res(c.toDataURL("image/png"));
           };
+          img.onerror = () =>
+            reject(
+              new Error("Could not load the ID template. Please try again."),
+            );
           img.src = url;
         });
 
@@ -936,34 +947,32 @@ export function AutoId({ profile }) {
 
         // Cut-and-stick uses the same position order on separate sheets.
         // Long-edge duplex mirrors every row so each back lands behind its front.
+        // Short rows get leading blanks so their backs land in the mirrored columns.
         let backsGrid = "";
         const backChunk =
           printMethod === "duplex"
-            ? Array.from({ length: Math.ceil(chunk.length / 3) }, (_, row) =>
-                chunk.slice(row * 3, row * 3 + 3).reverse(),
-              ).flat()
+            ? Array.from({ length: Math.ceil(chunk.length / 3) }, (_, row) => {
+                const cards = chunk.slice(row * 3, row * 3 + 3);
+                return [
+                  ...Array(3 - cards.length).fill(null),
+                  ...cards.reverse(),
+                ];
+              }).flat()
             : chunk;
-        backChunk.forEach(({ raw: r, idx: i }) => {
-          backsGrid += `<div style="display:inline-block;">${buildCardHtml(templateDataUrl, r, i, "back")}</div>`;
+        backChunk.forEach((entry) => {
+          backsGrid += entry
+            ? `<div style="display:inline-block;">${buildCardHtml(templateDataUrl, entry.raw, entry.idx, "back")}</div>`
+            : `<div style="width:${W}px;height:${H}px;"></div>`;
         });
 
-        const pageStyle = `width:7.9in;min-height:12.4in;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:0.15in;page-break-after:always;`;
-        const gridStyle = `display:grid;grid-template-columns:repeat(3,${W}px);gap:${gap}px;justify-content:center;`;
-        const titleStyle = `font-size:9pt;font-weight:700;color:#7b0000;text-align:center;margin-bottom:6px;letter-spacing:0.03em;font-family:sans-serif;`;
-        const subStyle = `font-size:7pt;color:#888;text-align:center;margin-bottom:8px;font-family:sans-serif;`;
+        const pageStyle = `width:7.9in;min-height:12.4in;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding-top:0.15in;page-break-after:always;`;
+        const gridStyle = `display:grid;grid-template-columns:repeat(3,${W}px);gap:${gap}px;justify-content:start;`;
 
         const frontPage = `<div style="${pageStyle}">
-            <div style="${titleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student ID (FRONTS)</div>
-            <div style="${subStyle}">Batch ${p + 1} of ${pagesNeeded} • ${chunk.length} IDs • Print on Folio (8.5×13in)</div>
             <div style="${gridStyle}">${frontsGrid}</div>
           </div>`;
-        const backPage = `<div style="${pageStyle}">
-            <div style="${titleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student ID (BACKS)</div>
-            <div style="${subStyle}">Batch ${p + 1} of ${pagesNeeded} • ${
-              printMethod === "ordinary"
-                ? "Cut and attach to the matching front in the same numbered position"
-                : "Long-edge duplex layout — back columns are mirrored for alignment"
-            }</div>
+        // Duplex backs are mirrored, so they hug the right edge to sit behind left-aligned fronts.
+        const backPage = `<div style="${pageStyle}${printMethod === "duplex" ? "align-items:flex-end;" : ""}">
             <div style="${gridStyle}">${backsGrid}</div>
           </div>`;
 
@@ -977,54 +986,31 @@ export function AutoId({ profile }) {
           ? frontPagesHtml + backPagesHtml
           : interleavedPagesHtml;
 
-      // The focused single, double, and triple workflows use a compact layout. Ordinary
-      // glossy paper places each front/back pair together; duplex paper uses
-      // two aligned sides. Whole-class printing keeps the existing page flow.
+      // Single, double, and triple always print duplex: fronts on one page and
+      // mirrored backs on the next. Whole-class printing keeps the existing page flow.
       if (["single", "double", "triple"].includes(printMode)) {
-        const focusedPageStyle = `width:7.9in;min-height:12.4in;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:0.15in;page-break-after:always;`;
-        const focusedTitleStyle = `font-size:9pt;font-weight:700;color:#7b0000;text-align:center;margin-bottom:6px;letter-spacing:0.03em;font-family:sans-serif;`;
-        const focusedSubStyle = `font-size:7pt;color:#888;text-align:center;margin-bottom:8px;font-family:sans-serif;`;
+        const focusedPageStyle = `width:7.9in;min-height:12.4in;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding-top:0.15in;page-break-after:always;`;
 
-        if (printMethod === "ordinary") {
-          const pairedCards = queue
-            .map(
-              ({ raw: learner, idx: learnerIdx }) =>
-                `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "front")}</div>` +
-                `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "back")}</div>`,
-            )
-            .join("");
-          const pairedGridStyle = `display:grid;grid-template-columns:repeat(2,${W}px);gap:${gap}px;justify-content:center;`;
-          pagesHtml = `<div style="${focusedPageStyle}">
-            <div style="${focusedTitleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student IDs</div>
-            <div style="${focusedSubStyle}">Ordinary glossy photo paper • Front and back are side by side • Cut and attach each pair</div>
-            <div style="${pairedGridStyle}">${pairedCards}</div>
-          </div>`;
-        } else {
-          const focusedFronts = queue
-            .map(
-              ({ raw: learner, idx: learnerIdx }) =>
-                `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "front")}</div>`,
-            )
-            .join("");
-          const focusedBacks = [...queue]
-            .reverse()
-            .map(
-              ({ raw: learner, idx: learnerIdx }) =>
-                `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "back")}</div>`,
-            )
-            .join("");
-          const focusedGridStyle = `display:grid;grid-template-columns:repeat(${queue.length},${W}px);gap:${gap}px;justify-content:center;`;
-          pagesHtml = `<div style="${focusedPageStyle}">
-            <div style="${focusedTitleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student IDs (FRONTS)</div>
-            <div style="${focusedSubStyle}">Duplex photo paper • Print this side first</div>
-            <div style="${focusedGridStyle}">${focusedFronts}</div>
-          </div>
-          <div style="${focusedPageStyle}">
-            <div style="${focusedTitleStyle}">ISABELA EAST CENTRAL ELEMENTARY SCHOOL — Student IDs (BACKS)</div>
-            <div style="${focusedSubStyle}">Long-edge duplex alignment • Back order is mirrored</div>
-            <div style="${focusedGridStyle}">${focusedBacks}</div>
-          </div>`;
-        }
+        const focusedFronts = queue
+          .map(
+            ({ raw: learner, idx: learnerIdx }) =>
+              `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "front")}</div>`,
+          )
+          .join("");
+        const focusedBacks = [...queue]
+          .reverse()
+          .map(
+            ({ raw: learner, idx: learnerIdx }) =>
+              `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "back")}</div>`,
+          )
+          .join("");
+        const focusedGridStyle = `display:grid;grid-template-columns:repeat(${queue.length},${W}px);gap:${gap}px;justify-content:start;`;
+        pagesHtml = `<div style="${focusedPageStyle}">
+          <div style="${focusedGridStyle}">${focusedFronts}</div>
+        </div>
+        <div style="${focusedPageStyle}align-items:flex-end;">
+          <div style="${focusedGridStyle}">${focusedBacks}</div>
+        </div>`;
       }
 
       const html = `<!DOCTYPE html>
@@ -1033,6 +1019,8 @@ export function AutoId({ profile }) {
 <meta charset="utf-8" />
 <title>IECES Student IDs (${queue.length} learners)</title>
 <style>
+  /* One shared rule: Chromium ignores CSS variables larger than 2 MB. */
+  .id-card { background-image: url('${templateDataUrl}'); }
   @page { size: 8.5in 13in; margin: 0.3in; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #fff; font-family: system-ui, sans-serif; }
@@ -1042,17 +1030,20 @@ export function AutoId({ profile }) {
 <body>${pagesHtml}</body>
 </html>`;
 
-      const win = window.open(
-        "",
-        "_blank",
-        "width=900,height=1200,menubar=no,toolbar=no,location=no",
-      );
-      win.document.write(html);
-      win.document.close();
-      win.focus();
-      setTimeout(() => {
-        win.print();
-      }, 1200);
+      // Print one page at a time so only one sheet is in the tray and a manual
+      // duplex back can never land on a different sheet.
+      const pagePrompt = (page, totalPages) => {
+        if (printMethod === "duplex") {
+          return page % 2 === 0
+            ? "Take the sheet that just printed and flip it left to right (long edge) without rotating it, as shown in the duplex guide. Put only that sheet in the tray, then click Continue to print its backs."
+            : "Put one new sheet of photo paper in the tray (remove any others), then click Continue to print the next fronts.";
+        }
+        const side = page <= totalPages / 2 ? "fronts" : "backs";
+        return `Put one new sheet of photo paper in the tray (remove any others), then click Continue to print the ${side}.`;
+      };
+      await requestPrint({ html, paper: "Folio", margin: 0.3, pagePrompt });
+    } catch (error) {
+      alert(error.message || "Could not prepare the ID preview.");
     } finally {
       setPrinting(false);
     }
@@ -1103,50 +1094,66 @@ export function AutoId({ profile }) {
           </div>
 
           {/* ── Paper / assembly method ── */}
-          <div>
-            <label className="adv-label">Paper / Assembly Method</label>
-            <div
-              style={{
-                display: "flex",
-                gap: "12px",
-                flexWrap: "wrap",
-                marginTop: "4px",
-              }}
-            >
-              {[
-                {
-                  v: "ordinary",
-                  label: "✂️ Ordinary Glossy Photo Paper",
-                },
-                {
-                  v: "duplex",
-                  label: "🔄 Double-Sided / Duplex Photo Paper",
-                },
-              ].map(({ v, label }) => (
-                <label
-                  key={v}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    cursor: "pointer",
-                    fontSize: "0.86rem",
-                    fontWeight: "600",
-                    color: printMethod === v ? "#7b1a1a" : "#444",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="printMethod"
-                    value={v}
-                    checked={printMethod === v}
-                    onChange={() => setPrintMethod(v)}
-                  />
-                  {label}
-                </label>
-              ))}
+          {printMode === "class" ? (
+            <div>
+              <label className="adv-label">Paper / Assembly Method</label>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                  marginTop: "4px",
+                }}
+              >
+                {[
+                  {
+                    v: "ordinary",
+                    label: "✂️ Ordinary Glossy Photo Paper",
+                  },
+                  {
+                    v: "duplex",
+                    label: "🔄 Double-Sided / Duplex Photo Paper",
+                  },
+                ].map(({ v, label }) => (
+                  <label
+                    key={v}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      cursor: "pointer",
+                      fontSize: "0.86rem",
+                      fontWeight: "600",
+                      color: printMethod === v ? "#7b1a1a" : "#444",
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="printMethod"
+                      value={v}
+                      checked={printMethod === v}
+                      onChange={() => setClassPrintMethod(v)}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div>
+              <label className="adv-label">Paper / Assembly Method</label>
+              <div
+                style={{
+                  marginTop: "4px",
+                  fontSize: "0.86rem",
+                  fontWeight: "600",
+                  color: "#7b1a1a",
+                }}
+              >
+                🔄 Double-Sided / Duplex Photo Paper (always used for 1–3 IDs)
+              </div>
+            </div>
+          )}
 
           {/* ── Learner select (single mode) ── */}
           {printMethod === "duplex" && (
@@ -1265,32 +1272,24 @@ export function AutoId({ profile }) {
             >
               📄 <strong>{printQueue.length}</strong> learner ID
               {printQueue.length !== 1 ? "s" : ""} selected →{" "}
-              {["single", "double", "triple"].includes(printMode) &&
-              printMethod === "ordinary" ? (
-                <>
-                  <strong>1</strong> print page with front/back pairs side by
-                  side → <strong>1</strong> sheet needed
-                </>
-              ) : (
-                <>
-                  <strong>{pagesNeeded * 2}</strong> print pages ({pagesNeeded}{" "}
-                  fronts + {pagesNeeded} backs) →{" "}
-                  <strong>
-                    {printMethod === "ordinary" ? pagesNeeded * 2 : pagesNeeded}
-                  </strong>{" "}
-                  sheet
-                  {(printMethod === "ordinary"
-                    ? pagesNeeded * 2
-                    : pagesNeeded) !== 1
-                    ? "s"
-                    : ""}{" "}
-                  needed (
-                  {printMethod === "ordinary"
-                    ? "ordinary glossy, cut & attach"
-                    : "manual duplex"}
-                  )
-                </>
-              )}
+              <>
+                <strong>{pagesNeeded * 2}</strong> print pages ({pagesNeeded}{" "}
+                fronts + {pagesNeeded} backs) →{" "}
+                <strong>
+                  {printMethod === "ordinary" ? pagesNeeded * 2 : pagesNeeded}
+                </strong>{" "}
+                sheet
+                {(printMethod === "ordinary"
+                  ? pagesNeeded * 2
+                  : pagesNeeded) !== 1
+                  ? "s"
+                  : ""}{" "}
+                needed (
+                {printMethod === "ordinary"
+                  ? "ordinary glossy, cut & attach"
+                  : "manual duplex"}
+                )
+              </>
             </div>
           )}
           {["double", "triple"].includes(printMode) &&
@@ -1450,6 +1449,7 @@ export function AutoId({ profile }) {
               </span>
             )}
             <button
+              data-print-ids
               onClick={handlePrint}
               disabled={printing || !hasValidPrintSelection}
               style={{

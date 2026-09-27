@@ -1,6 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  printPrepare: (document) => ipcRenderer.invoke('print:prepare', document),
+  printGetPrinters: () => ipcRenderer.invoke('print:get-printers'),
+  printRenderPreview: (settings) => ipcRenderer.invoke('print:render-preview', settings),
+  printExecute: (settings) => ipcRenderer.invoke('print:execute', settings),
+  printCleanupPreview: () => ipcRenderer.invoke('print:cleanup-preview'),
+
   // App info
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
 

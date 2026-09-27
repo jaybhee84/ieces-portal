@@ -1,3 +1,5 @@
+import { usePrintPreview } from "./PrintPreview/PrintPreviewContext";
+import NutritionPrintTable from "./NutritionPrintTable";
 import React, { useEffect, useRef, useState } from "react";
 import { Download, Printer } from "lucide-react";
 import { supabase } from "../lib/supabase";
@@ -9,7 +11,7 @@ import {
   learnerNutritionReport,
 } from "../lib/learnerRoster";
 import { BAZ_META, getCurrentSchoolYear, HAZ_META } from "../lib/growth/bmi";
-import educationSeal from "../image/deped-education-seal.png";
+import educationSeal from "../image/deped.png";
 import "../styles/NutritionalStatus.css";
 
 const SCHOOL_NAME = "Isabela East Central Elementary School";
@@ -36,29 +38,18 @@ const formatDateMMDDYYYY = (value) => {
   return `${month}/${day}/${date.getFullYear()}`;
 };
 
-const formatNumber = (value, digits) =>
-  typeof value === "number" && !Number.isNaN(value) ? value.toFixed(digits) : "—";
-
-const REPORT_COLUMNS = [
-  "No.",
-  "Names",
-  "Birthday\nmm/dd/yyyy",
-  "Weight\n(kg)",
-  "Height\n(meters)",
-  "Sex",
-  "Height²\n(m²)",
-  "Age\n(year) (month)",
-  "Body Mass\nIndex",
-  "Nutritional\nStatus",
-  "Height-for-Age",
-];
-
 const PERIOD_OPTIONS = [
   { value: "baseline", label: "Baseline" },
   { value: "endline", label: "Endline" },
 ];
 
-const BAZ_ORDER = ["Severely Wasted", "Wasted", "Normal", "Overweight", "Obese"];
+const BAZ_ORDER = [
+  "Severely Wasted",
+  "Wasted",
+  "Normal",
+  "Overweight",
+  "Obese",
+];
 const HAZ_ORDER = ["Severely Stunted", "Stunted", "Normal", "Tall"];
 const UNKNOWN_META = { color: "#6b7280", bg: "#f1f5f9" };
 
@@ -79,7 +70,9 @@ const tallyStatuses = (statuses, order) => {
 // tables (one for BMI-for-Age, one for Height-for-Age), matching the DepEd
 // Nutritional Status Report format.
 const buildSexTally = (rows, order, statusKey) => {
-  const counts = Object.fromEntries(order.map((label) => [label, { M: 0, F: 0 }]));
+  const counts = Object.fromEntries(
+    order.map((label) => [label, { M: 0, F: 0 }]),
+  );
   let totalM = 0;
   let totalF = 0;
   rows.forEach(({ report }) => {
@@ -109,7 +102,10 @@ const StatusTile = ({ label, count, total, meta }) => {
       <strong className="text-base" style={{ color: meta.color }}>
         {count}
       </strong>
-      <small className="block text-[9px] font-semibold" style={{ color: meta.color }}>
+      <small
+        className="block text-[9px] font-semibold"
+        style={{ color: meta.color }}
+      >
         {total ? `${percent}%` : "—"}
       </small>
     </div>
@@ -117,6 +113,7 @@ const StatusTile = ({ label, count, total, meta }) => {
 };
 
 export function NutritionalStatus({ profile }) {
+  const { requestPrint } = usePrintPreview();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -216,11 +213,13 @@ export function NutritionalStatus({ profile }) {
   );
 
   const periodLabel =
-    PERIOD_OPTIONS.find((option) => option.value === period)?.label || "Baseline";
+    PERIOD_OPTIONS.find((option) => option.value === period)?.label ||
+    "Baseline";
   const schoolYear = getCurrentSchoolYear().replace(/[–—]/g, "-");
 
   const reportMeta = {
     dateOfWeighing: formatDateMMDDYYYY(latestWeighingDate),
+    weighingDate: latestWeighingDate,
     schoolYearLabel: `${periodLabel} SY ${schoolYear}`,
     gradeClassLabel,
     periodLabel,
@@ -236,8 +235,9 @@ export function NutritionalStatus({ profile }) {
   const downloadExcel = async () => {
     setExporting(true);
     try {
-      const { downloadNutritionReportExcel } = await import("../lib/nutritionReportExcel.mjs");
-      downloadNutritionReportExcel(
+      const { downloadNutritionReportExcel } =
+        await import("../lib/nutritionReportExcel.mjs");
+      await downloadNutritionReportExcel(
         reportRows.map(({ student, report }) => ({
           name: learnerDisplayName(student),
           birthdate: student.birthdate,
@@ -265,8 +265,8 @@ export function NutritionalStatus({ profile }) {
               : "Not linked in Org Chart"}
         </h2>
         <p>
-          Total: {students.length} Learners &nbsp;|&nbsp; Measured:{" "}
-          {measured} &nbsp;|&nbsp; No record: {students.length - measured}
+          Total: {students.length} Learners &nbsp;|&nbsp; Measured: {measured}{" "}
+          &nbsp;|&nbsp; No record: {students.length - measured}
         </p>
       </div>
 
@@ -274,7 +274,10 @@ export function NutritionalStatus({ profile }) {
         <div className="nsr-toolbar">
           <label className="nsr-period-select">
             <span>Period</span>
-            <select value={period} onChange={(event) => setPeriod(event.target.value)}>
+            <select
+              value={period}
+              onChange={(event) => setPeriod(event.target.value)}
+            >
               {PERIOD_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -288,9 +291,10 @@ export function NutritionalStatus({ profile }) {
             onClick={downloadExcel}
             disabled={exporting}
           >
-            <Download size={16} /> {exporting ? "Preparing Excel…" : "Download Excel"}
+            <Download size={16} />{" "}
+            {exporting ? "Preparing Excel…" : "Download Excel"}
           </button>
-          <button type="button" onClick={() => window.print()}>
+          <button type="button" onClick={() => requestPrint()}>
             <Printer size={16} /> Print Report
           </button>
         </div>
@@ -382,129 +386,110 @@ export function NutritionalStatus({ profile }) {
             </div>
           </div>
 
-          <div className="nsr-report">
-            <div className="nsr-report-header">
-              <img src={educationSeal} alt="Department of Education seal" className="nsr-seal" />
-              <h2>NUTRITIONAL STATUS REPORT</h2>
-              <h3>{SCHOOL_NAME}</h3>
-              <p>{SCHOOL_ADDRESS}</p>
-              <p>{reportMeta.schoolYearLabel}</p>
-            </div>
-            <div className="nsr-report-meta">
-              <span>
-                <strong>Date of Weighing:</strong> {reportMeta.dateOfWeighing}
-              </span>
-              <span>
-                <strong>Grade/Class:</strong> {reportMeta.gradeClassLabel}
-              </span>
-            </div>
-            <div className="nsr-report-table-wrap">
-              <table className="nsr-report-table">
-                <thead>
-                  <tr>
-                    {REPORT_COLUMNS.map((label) => (
-                      <th key={label}>
-                        {label.split("\n").map((line, index) => (
-                          <React.Fragment key={line}>
-                            {index > 0 && <br />}
-                            {line}
-                          </React.Fragment>
-                        ))}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportRows.map(({ student, report }, index) => (
-                    <tr key={student.id}>
-                      <td className="nsr-no">{index + 1}</td>
-                      <td className="nsr-name">
-                        {learnerDisplayName(student)}
-                      </td>
-                      <td>{formatDateMMDDYYYY(student.birthdate)}</td>
-                      <td>{report.weightKg ?? "—"}</td>
-                      <td>{formatNumber(report.heightMeters, 2)}</td>
-                      <td>{report.sex}</td>
-                      <td>{formatNumber(report.heightSquaredMeters, 4)}</td>
-                      <td>{report.ageYearMonth}</td>
-                      <td>{formatNumber(report.bmi, 1)}</td>
-                      <td>{report.bmiStatus}</td>
-                      <td>{report.hfaStatus}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="nsr-tally-section">
-              <table className="nsr-tally-table">
-                <thead>
-                  <tr>
-                    <th>Body Mass Index</th>
-                    <th>M</th>
-                    <th>F</th>
-                    <th>T</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="nsr-tally-label">No. of Cases</td>
-                    <td>{bazSexTally.totalM}</td>
-                    <td>{bazSexTally.totalF}</td>
-                    <td>{bazSexTally.total}</td>
-                  </tr>
-                  {BAZ_ORDER.map((label) => (
-                    <tr key={label}>
-                      <td className="nsr-tally-label">{label}</td>
-                      <td>{bazSexTally.counts[label].M}</td>
-                      <td>{bazSexTally.counts[label].F}</td>
-                      <td>{bazSexTally.counts[label].M + bazSexTally.counts[label].F}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="nsr-bmi-formula">
-                <strong>Body Mass Index =</strong>
-                <div className="nsr-bmi-fraction">
-                  <span>Weight (kgs)</span>
-                  <span>Height squared (m²)</span>
+          <div className="nsr-report-scroll">
+            <div
+              className="nsr-report"
+              data-print-paper="Legal"
+              data-print-margin="0.35"
+            >
+              <div className="nsr-report-header">
+                <img
+                src={educationSeal}
+                alt="Department of Education seal"
+                className="nsr-seal"
+              />
+              <div className="nsr-report-title">
+                  <h2>NUTRITIONAL STATUS REPORT</h2>
+                  <h3>{SCHOOL_NAME}</h3>
+                  <p>{SCHOOL_ADDRESS}</p>
+                  <p>{reportMeta.schoolYearLabel}</p>
                 </div>
               </div>
-
-              <table className="nsr-tally-table">
-                <thead>
-                  <tr>
-                    <th>HFA</th>
-                    <th>M</th>
-                    <th>F</th>
-                    <th>TOTAL</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="nsr-tally-label">No. of Cases</td>
-                    <td>{hazSexTally.totalM}</td>
-                    <td>{hazSexTally.totalF}</td>
-                    <td>{hazSexTally.total}</td>
-                  </tr>
-                  {HAZ_ORDER.map((label) => (
-                    <tr key={label}>
-                      <td className="nsr-tally-label">{HFA_ROW_LABELS[label] || label}</td>
-                      <td>{hazSexTally.counts[label].M}</td>
-                      <td>{hazSexTally.counts[label].F}</td>
-                      <td>{hazSexTally.counts[label].M + hazSexTally.counts[label].F}</td>
+              <NutritionPrintTable
+                rows={reportRows}
+                weighingDate={latestWeighingDate}
+                gradeClass={gradeClassLabel}
+              />
+              <div className="nsr-tally-section">
+                <table className="nsr-tally-table">
+                  <thead>
+                    <tr>
+                      <th>Body Mass Index</th>
+                      <th>M</th>
+                      <th>F</th>
+                      <th>T</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="nsr-tally-label">No. of Cases</td>
+                      <td>{bazSexTally.totalM}</td>
+                      <td>{bazSexTally.totalF}</td>
+                      <td>{bazSexTally.total}</td>
+                    </tr>
+                    {BAZ_ORDER.map((label) => (
+                      <tr key={label}>
+                        <td className="nsr-tally-label">{label}</td>
+                        <td>{bazSexTally.counts[label].M}</td>
+                        <td>{bazSexTally.counts[label].F}</td>
+                        <td>
+                          {bazSexTally.counts[label].M +
+                            bazSexTally.counts[label].F}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
 
-            <div className="nsr-signature">
-              <span className="nsr-signature-label">Prepared by:</span>
-              <div className="nsr-signature-line" />
-              <strong className="nsr-signature-name">{preparedByName || "—"}</strong>
-              <span className="nsr-signature-title">Class Adviser</span>
+                <div className="nsr-bmi-formula">
+                  <strong>Body Mass Index =</strong>
+                  <div className="nsr-bmi-fraction">
+                    <span>Weight (kgs)</span>
+                    <span>Height squared (m²)</span>
+                  </div>
+                </div>
+
+                <table className="nsr-tally-table">
+                  <thead>
+                    <tr>
+                      <th>HFA</th>
+                      <th>M</th>
+                      <th>F</th>
+                      <th>TOTAL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="nsr-tally-label">No. of Cases</td>
+                      <td>{hazSexTally.totalM}</td>
+                      <td>{hazSexTally.totalF}</td>
+                      <td>{hazSexTally.total}</td>
+                    </tr>
+                    {HAZ_ORDER.map((label) => (
+                      <tr key={label}>
+                        <td className="nsr-tally-label">
+                          {HFA_ROW_LABELS[label] || label}
+                        </td>
+                        <td>{hazSexTally.counts[label].M}</td>
+                        <td>{hazSexTally.counts[label].F}</td>
+                        <td>
+                          {hazSexTally.counts[label].M +
+                            hazSexTally.counts[label].F}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="nsr-signature">
+                <span className="nsr-signature-label">Prepared by:</span>
+                <div className="nsr-signature-line" />
+                <strong className="nsr-signature-name">
+                  {preparedByName || "—"}
+                </strong>
+                <span className="nsr-signature-title">Class Adviser</span>
+              </div>
             </div>
           </div>
         </>

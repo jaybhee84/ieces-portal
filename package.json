@@ -1,7 +1,7 @@
 {
   "name": "ieces-portal",
   "private": true,
-  "version": "3.0.8",
+  "version": "3.0.9",
   "type": "commonjs",
   "main": "electron/main.js",
   "scripts": {
@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "electron:build": "vite build && electron-builder",
-    "electron:build:publish": "vite build && electron-builder --publish always"
+    "electron:build:publish": "vite build && electron-builder --publish always",
+    "test": "node --test tests/print-settings.test.cjs && node scripts/test-nutrition-export.mjs",
+    "dist:win": "vite build && electron-builder --win nsis --x64 --publish never"
   },
   "build": {
     "appId": "com.ieces.portal",
@@ -33,12 +35,6 @@
       "target": "nsis",
       "icon": "public/iecesportal.ico"
     },
-    "mac": {
-      "icon": "public/iecesportal.icns"
-    },
-    "linux": {
-      "icon": "public/iecesportal.png"
-    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
@@ -46,7 +42,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "IECES Portal",
       "installerIcon": "public/iecesportal.ico",
-      "uninstallerIcon": "public/iecesportal.ico"
+      "uninstallerIcon": "public/iecesportal.ico",
+      "artifactName": "IECES-Portal-Setup-${version}.${ext}"
     }
   },
   "dependencies": {
@@ -54,6 +51,7 @@
     "electron-updater": "^6.8.9",
     "fflate": "^0.8.3",
     "lucide-react": "^0.344.0",
+    "pdfjs-dist": "^4.10.38",
     "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
@@ -61,7 +59,7 @@
   "devDependencies": {
     "@types/react": "^18.2.56",
     "@types/react-dom": "^18.2.19",
-    "@vitejs/plugin-react": "^4.2.1",
+    "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.4.18",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
@@ -69,7 +67,7 @@
     "electron-builder": "^24.13.3",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
-    "vite": "^5.1.4",
+    "vite": "^8.3.1",
     "wait-on": "^7.2.0"
   }
 }

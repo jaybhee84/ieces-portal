@@ -1,9 +1,10 @@
+import { usePrintPreview } from "./PrintPreview/PrintPreviewContext";
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus, Printer, RotateCcw, Save } from "lucide-react";
 import { loadAdvisoryRoster } from "../lib/advisoryRosterData";
 import { supabase } from "../lib/supabase";
 import { learnerDisplayName, learnerGenderLabel, learnerLrn } from "../lib/learnerRoster";
-import educationSeal from "../image/deped-education-seal.png";
+import educationSeal from "../image/deped.png";
 import depedLogo from "../image/deped-logo.gif";
 import "../styles/Form137.css";
 
@@ -318,6 +319,7 @@ function FormPages({ form }) {
 }
 
 export function Form137({ profile }) {
+  const { requestPrint } = usePrintPreview();
   const [form, setForm] = useState(initialForm);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -479,10 +481,10 @@ export function Form137({ profile }) {
   };
 
   return (
-    <div className="f137-root">
+    <div className="f137-root" data-print-paper="Legal" data-print-margin="0">
       <div className="f137-toolbar">
         <div><h2>Form 137</h2><p>SF10-ES cumulative elementary permanent record • Grades 1-6</p></div>
-        <div className="f137-actions"><button type="button" title="Clear form" onClick={clearDraft} disabled={saving}><RotateCcw size={16} /> Clear</button><button type="button" onClick={saveDraft} disabled={saving || !form.learnerId}><Save size={16} /> {saving ? "Saving..." : "Save Information"}</button><button type="button" className="primary" onClick={() => window.print()}><Printer size={16} /> Print</button></div>
+        <div className="f137-actions"><button type="button" title="Clear form" onClick={clearDraft} disabled={saving}><RotateCcw size={16} /> Clear</button><button type="button" onClick={saveDraft} disabled={saving || !form.learnerId}><Save size={16} /> {saving ? "Saving..." : "Save Information"}</button><button type="button" className="primary" onClick={() => requestPrint()}><Printer size={16} /> Print</button></div>
       </div>
       {message && <div className="f137-message">{message}</div>}
       <section className="f137-editor">
