@@ -1,0 +1,123 @@
+name: Release
+
+# Releasing is: bump package.json's version, commit, push to main.
+# This repository is public, so Actions minutes are free and the Windows
+# installer is built and published here (no macOS build). As in Tax-E, a
+# version is released once: a single draft release is created, the build
+# uploads into it, and it is published only after the build succeeds.
+# Pushes whose version is already released do nothing.
+#
+# Rerun by hand from the Actions tab (Run workflow) if a build failed.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: package.json
+          sparse-checkout-cone-mode: false
+
+      - name: Is this version new?
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="v$(node -p "require('./package.json').version")"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ "$(gh release view "$TAG" --repo "${{ github.repository }}" --json isDraft --jq .isDraft 2>/dev/null)" = "false" ]; then
+            echo "$TAG is already released; nothing to do."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Releasing $TAG."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  create-release:
+    needs: check-version
+    if: needs.check-version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.check-version.outputs.tag }}
+    steps:
+      - name: Create the draft release the build uploads into
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Draft release $RELEASE_TAG exists; the build will upload into it."
+          else
+            gh release create "$RELEASE_TAG" --repo "${{ github.repository }}" --draft --target "$GITHUB_SHA" --title "${RELEASE_TAG#v}" --notes ""
+          fi
+
+  build-windows:
+    needs: [check-version, create-release]
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ needs.check-version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Build Windows installer
+        run: npm run dist:win
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh release upload "$RELEASE_TAG" release/IECES-Portal-Setup-*.exe release/IECES-Portal-Setup-*.exe.blockmap release/latest.yml --repo "${{ github.repository }}" --clobber
+
+  publish-release:
+    needs: [check-version, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ needs.check-version.outputs.tag }}" --draft=false --latest --repo "${{ github.repository }}"
+
+  # Installs of v3.0.8 and earlier check buzzjay84/ieces-portal for updates.
+  # Copy each release there too so they can update; from v3.0.9 on the app
+  # checks this repository. Remove this job once no old installs remain.
+  mirror-to-buzzjay84:
+    needs: [check-version, publish-release]
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.check-version.outputs.tag }}
+    steps:
+      - name: Copy the installer to buzzjay84/ieces-portal
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        shell: bash
+        run: |
+          gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" --dir assets
+          if gh release view "$RELEASE_TAG" --repo buzzjay84/ieces-portal >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" assets/* --repo buzzjay84/ieces-portal --clobber
+          else
+            gh release create "$RELEASE_TAG" assets/* --repo buzzjay84/ieces-portal --title "${RELEASE_TAG#v}" --notes "" --latest
+          fi
