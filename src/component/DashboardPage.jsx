@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import { SUPERADMIN_MODE_KEY } from "../lib/portalAuth";
 import iecesLogo from "../image/ieceslogo.png";
 import "../styles/DashboardPage.css";
 import { EnrollmentForm } from "./EnrollmentForm";
@@ -9,7 +10,8 @@ import { NutritionalStatus } from "./NutritionalStatus";
 import { TransferLearner } from "./TransferLearner";
 import { AutoId } from "./AutoId"; // <--- IMPORT AUTO ID
 import { Form137 } from "./Form137";
-import { FileSpreadsheet } from "lucide-react";
+import { TeacherProfile } from "./TeacherProfile";
+import { FileSpreadsheet, UserRound } from "lucide-react";
 import {
   adviserGradeKey,
   findOrgAdviserForProfile,
@@ -193,6 +195,9 @@ export default function DashboardPage({ session, userSession, onLogout }) {
   const [testScope, setTestScope] = useState("specific");
   const [showTestSelector, setShowTestSelector] = useState(true);
   const [isCreatorAccount, setIsCreatorAccount] = useState(false);
+  const [superadminMode] = useState(
+    () => sessionStorage.getItem(SUPERADMIN_MODE_KEY) === "true",
+  );
 
   useEffect(() => {
     if (window.electronAPI?.getVersion) {
@@ -320,13 +325,16 @@ export default function DashboardPage({ session, userSession, onLogout }) {
 
   const isAdminAccount =
     isCreatorAccount || profile?.role === "admin" || profile?.username === "admin";
-  const selectedTestAdviser = isAdminAccount
+  // The test view belongs to the superadmin sign-in only. An admin who signs
+  // in through the regular form sees the Portal as their own account.
+  const isSuperadmin = isAdminAccount && superadminMode;
+  const selectedTestAdviser = isSuperadmin
     ? orgAdvisers.find(
         (adviser) => String(adviser.id) === String(testAdviserId),
       )
     : null;
   const hasTestSelection = Boolean(
-    isAdminAccount &&
+    isSuperadmin &&
       (testRole === "subject_teacher"
         ? true
         : testRole === "adviser"
@@ -378,11 +386,16 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         orgAdviserName(left).localeCompare(orgAdviserName(right))
       );
     });
+  // These decide which tabs are shown. Superadmin gets every tab, whatever
+  // role is being tested; each tab still loads data for the selected teacher.
   const isAdviser =
+    isSuperadmin ||
     effectiveProfile?.role === "adviser" ||
     effectiveProfile?.role === "grade_chairman";
-  const isGradeChairman = effectiveProfile?.role === "grade_chairman";
-  const isSubjectTeacher = effectiveProfile?.role === "subject_teacher";
+  const isGradeChairman =
+    isSuperadmin || effectiveProfile?.role === "grade_chairman";
+  const isSubjectTeacher =
+    !isSuperadmin && effectiveProfile?.role === "subject_teacher";
   const gradeLabel = (grade) =>
     grade === "0" ? "Kinder" : grade === "SNED" ? "SNED" : `Grade ${grade}`;
   const testViewKey = hasTestSelection
@@ -410,14 +423,14 @@ export default function DashboardPage({ session, userSession, onLogout }) {
             <span className="user-role">
               {hasTestSelection
                 ? testRole === "subject_teacher"
-                  ? "Admin test · subject teacher"
-                  : `Admin test · ${effectiveProfile.role.replace("_", " ")} · ${gradeLabel(testGrade)} · ${testScope === "grade" ? "All classes" : "Specific class"}`
+                  ? "Superadmin test · subject teacher"
+                  : `Superadmin test ·${effectiveProfile.role.replace("_", " ")} · ${gradeLabel(testGrade)} · ${testScope === "grade" ? "All classes" : "Specific class"}`
                 : effectiveProfile?.role
                   ? effectiveProfile.role.replace("_", " ")
                   : "Teacher"}
             </span>
           </div>
-          {isAdminAccount && hasTestSelection && (
+          {isSuperadmin && hasTestSelection && (
             <button
               type="button"
               className="dash-switch-user-btn"
@@ -436,6 +449,13 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         {/* Navigation Sidebar */}
         <nav className="dash-sidebar">
           <div className="sidebar-menu">
+            <button
+              className={`nav-item ${activeTab === "teacher_profile" ? "active" : ""}`}
+              onClick={() => setActiveTab("teacher_profile")}
+            >
+              <UserRound className="nav-icon" size={18} /> Teacher Profile
+            </button>
+
             <button
               className={`nav-item ${activeTab === "enrollment" ? "active" : ""}`}
               onClick={() => setActiveTab("enrollment")}
@@ -528,6 +548,13 @@ export default function DashboardPage({ session, userSession, onLogout }) {
 
         {/* Content Panel Area */}
         <main className="dash-content" key={testViewKey}>
+          {activeTab === "teacher_profile" && (
+            <TeacherProfile
+              profile={effectiveProfile}
+              showAccount={!hasTestSelection}
+              onSaved={fetchProfile}
+            />
+          )}
           {activeTab === "enrollment" && <EnrollmentForm profile={effectiveProfile} />}
           {isAdviser && (
             <div style={{ display: activeTab === "advisory" ? "block" : "none" }}>
@@ -551,10 +578,9 @@ export default function DashboardPage({ session, userSession, onLogout }) {
           {activeTab === "transfer_learner" && isGradeChairman && (
             <TransferLearner profile={effectiveProfile} />
           )}
-          {activeTab === "search" && <SearchTab />}
-        </main>
+          {activeTab === "search" && <SearchTab />}        </main>
       </div>
-      {isAdminAccount && showTestSelector && (
+      {isSuperadmin && showTestSelector && (
         <div
           className="admin-test-overlay"
           role="dialog"
@@ -686,11 +712,11 @@ export default function DashboardPage({ session, userSession, onLogout }) {
                   setShowTestSelector(false);
                 }}
               >
-                Continue as selected user
+                Continue
               </button>
             </div>
             <small>
-              Your admin account remains signed in underneath this temporary test view.
+              Your superadmin account remains signed in underneath this temporary test view.
             </small>
           </div>
         </div>

@@ -1,8 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import {
   PORTAL_APP_KEY,
+  SUPERADMIN_MODE_KEY,
+  SUPERADMIN_NOTICE_KEY,
+  isPortalSuperadmin,
   resolvePortalLogin,
   validatePortalSession,
 } from "../lib/portalAuth";
@@ -224,9 +227,25 @@ function UpdateModal({ onClose }) {
 
 // ── Main LoginPage ────────────────────────────────────────────────────────────
 export default function LoginPage({ onLoginSuccess }) {
-  const [view, setView] = useState("login");
+  // A rejected superadmin sign-in remounts this page, so reopen that form.
+  const [view, setView] = useState(() =>
+    sessionStorage.getItem(SUPERADMIN_NOTICE_KEY) ? "superadmin" : "login",
+  );
   const [appVersion, setAppVersion] = useState("");
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const logoClicks = useRef({ count: 0, last: 0 });
+
+  // Hidden entry: five quick clicks on the school seal open superadmin sign-in.
+  const handleLogoClick = () => {
+    const now = Date.now();
+    const clicks = logoClicks.current;
+    clicks.count = now - clicks.last > 1500 ? 1 : clicks.count + 1;
+    clicks.last = now;
+    if (clicks.count >= 5) {
+      clicks.count = 0;
+      setView("superadmin");
+    }
+  };
 
   useEffect(() => {
     // Get version from Electron
@@ -258,7 +277,12 @@ export default function LoginPage({ onLoginSuccess }) {
             <div className="pulse-ring ring-2" />
             <div className="pulse-ring ring-3" />
             <div className="login-seal">
-              <img src={iecesLogo} alt="IECES Logo" />
+              <img
+                src={iecesLogo}
+                alt="IECES Logo"
+                draggable={false}
+                onClick={handleLogoClick}
+              />
             </div>
           </div>
 
@@ -278,15 +302,22 @@ export default function LoginPage({ onLoginSuccess }) {
 
       {/* Right panel */}
       <div className="login-right">
-        {view === "login" && <EnrollmentSlideshow />}
-        {view === "login" ? (
-          <LoginForm
-            onGoRegister={() => setView("register")}
-            onLoginSuccess={onLoginSuccess}
-          />
-        ) : (
-          <RegisterForm onGoLogin={() => setView("login")} />
-        )}
+        {/* The slideshow stays mounted behind every form so the background
+            does not change when switching between sign in and register. */}
+        <EnrollmentSlideshow />
+        <div className="login-form-scroll">
+          {view !== "register" ? (
+            <LoginForm
+              key={view}
+              superadmin={view === "superadmin"}
+              onGoLogin={() => setView("login")}
+              onGoRegister={() => setView("register")}
+              onLoginSuccess={onLoginSuccess}
+            />
+          ) : (
+            <RegisterForm onGoLogin={() => setView("login")} />
+          )}
+        </div>
       </div>
 
       {/* Update modal — triggered by Help menu */}
@@ -298,18 +329,30 @@ export default function LoginPage({ onLoginSuccess }) {
 }
 
 // ── Login Form ────────────────────────────────────────────────────────────────
-function LoginForm({ onGoRegister, onLoginSuccess }) {
+function LoginForm({ superadmin = false, onGoLogin, onGoRegister, onLoginSuccess }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() =>
+    superadmin ? sessionStorage.getItem(SUPERADMIN_NOTICE_KEY) || "" : "",
+  );
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    sessionStorage.removeItem(SUPERADMIN_NOTICE_KEY);
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
+    let signedIn = false;
 
     try {
+      // Signing in mounts the dashboard immediately, so the mode must be set
+      // first. It is cleared again below unless the sign-in fully succeeds.
+      if (superadmin) sessionStorage.setItem(SUPERADMIN_MODE_KEY, "true");
+      else sessionStorage.removeItem(SUPERADMIN_MODE_KEY);
+
       const identifier = username.trim().toLowerCase();
       let { data: profile, error: profileErr } =
         await resolvePortalLogin(identifier);
@@ -365,10 +408,21 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
         return;
       }
 
+      if (superadmin && !(await isPortalSuperadmin(authData.session))) {
+        const notice = "This account does not have superadmin access.";
+        sessionStorage.removeItem(SUPERADMIN_MODE_KEY);
+        sessionStorage.setItem(SUPERADMIN_NOTICE_KEY, notice);
+        await supabase.auth.signOut();
+        setError(notice);
+        return;
+      }
+
+      signedIn = true;
       if (onLoginSuccess) onLoginSuccess(authData.session);
     } catch (err) {
       setError("An unexpected error occurred. Please try again.");
     } finally {
+      if (!signedIn) sessionStorage.removeItem(SUPERADMIN_MODE_KEY);
       setLoading(false);
     }
   };
@@ -376,8 +430,12 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
   return (
     <div className="login-card">
       <div className="lc-header">
-        <h1>Sign In</h1>
-        <p>Enter your credentials to access reports</p>
+        <h1>{superadmin ? "Superadmin Sign In" : "Sign In"}</h1>
+        <p>
+          {superadmin
+            ? "Restricted access for testing teacher views"
+            : "Enter your credentials to access reports"}
+        </p>
       </div>
 
       <form onSubmit={handleLogin}>
@@ -387,7 +445,8 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="your_username"
+            placeholder={superadmin ? "superadmin" : "your_username"}
+            autoFocus={superadmin}
             required
           />
         </div>
@@ -411,16 +470,24 @@ function LoginForm({ onGoRegister, onLoginSuccess }) {
       </form>
 
       <div className="lc-footer">
-        <p>
-          Don't have an account?{" "}
-          <button
-            type="button"
-            onClick={onGoRegister}
-            className="lc-footer-btn"
-          >
-            Register here
-          </button>
-        </p>
+        {superadmin ? (
+          <p>
+            <button type="button" onClick={onGoLogin} className="lc-footer-btn">
+              Back to regular sign in
+            </button>
+          </p>
+        ) : (
+          <p>
+            Don't have an account?{" "}
+            <button
+              type="button"
+              onClick={onGoRegister}
+              className="lc-footer-btn"
+            >
+              Register here
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );

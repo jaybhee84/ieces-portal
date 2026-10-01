@@ -213,7 +213,19 @@ const measurementForPeriod = (learner, period) => {
   )[0];
 };
 
-const latestMeasurement = (learner) => measurementForPeriod(learner, "endline");
+// The roster badges show the learner's current status, so they read the most
+// recent weighing on record. This must not go through the Endline period
+// above: that is deliberately blank until Endline weighing starts, which left
+// every badge showing "—" even for learners with a Baseline weighing.
+const latestMeasurement = (learner) => {
+  const records = measuredRecords(learner);
+  if (!records.length) {
+    return learner?.weight || learner?.height ? learner : {};
+  }
+  return [...records].sort((left, right) =>
+    String(right.date || "").localeCompare(String(left.date || "")),
+  )[0];
+};
 
 const computeNutritionStatus = (learner, record) => {
   const sex = String(learner?.gender || learner?.sex || "")

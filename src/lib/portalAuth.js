@@ -30,6 +30,33 @@ export async function resolvePortalLogin(identifier) {
   };
 }
 
+// Set only by the hidden superadmin sign-in. The flag alone grants nothing:
+// the dashboard also requires the signed-in account to be a Portal admin.
+export const SUPERADMIN_MODE_KEY = "portal_superadmin_mode";
+export const SUPERADMIN_NOTICE_KEY = "portal_superadmin_notice";
+
+export async function isPortalSuperadmin(session) {
+  if (!session?.user?.id) return false;
+
+  const { data: profile } = await supabase
+    .from("portal_profile")
+    .select("role, username, auth_email")
+    .eq("id", session.user.id)
+    .maybeSingle();
+  if (!profile) return false;
+  if (profile.role === "admin" || profile.username === "admin") return true;
+
+  // The protected Dashboard owner keeps the existing shared Auth identity.
+  const { data: ownerEmail } = await supabase.rpc("dashboard_login_email", {
+    candidate_username: "admin",
+  });
+  return (
+    Boolean(ownerEmail) &&
+    String(ownerEmail).toLowerCase() ===
+      String(session.user.email || profile.auth_email || "").toLowerCase()
+  );
+}
+
 export async function validatePortalSession(session) {
   if (!session?.user?.id) {
     return { valid: false, error: "No active session." };

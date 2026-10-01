@@ -95,6 +95,7 @@ export function AdvisoryClass({ profile }) {
   const [savingDemographics, setSavingDemographics] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const loadedProfileKeyRef = useRef("");
+  const rosterScrollRef = useRef(null);
 
   useEffect(() => {
     const profileKey = [
@@ -403,6 +404,21 @@ export function AdvisoryClass({ profile }) {
     ]),
   );
 
+  // Free-text columns grow to fit their longest entry so nothing is cut off;
+  // the roster scrolls sideways. perChar allows for wide capital letters.
+  const fitColumnWidth = (field, minCh, perChar) => {
+    const longest = Math.max(
+      0,
+      ...Object.values(demographicDrafts).map(
+        (draft) => String(draft?.[field] || "").length,
+      ),
+    );
+    return { minWidth: `${Math.max(minCh, Math.ceil(longest * perChar) + 4)}ch` };
+  };
+  const middleNameWidth = fitColumnWidth("middle_name", 18, 1.3);
+  const streetAddressWidth = fitColumnWidth("street_address", 22, 1.1);
+  const guardianNameWidth = fitColumnWidth("guardian_contact_name", 28, 1.3);
+
   return (
     <div className="dash-card">
       {showSuccessModal && (
@@ -532,7 +548,10 @@ export function AdvisoryClass({ profile }) {
           Loading learners…
         </div>
       ) : (
-        <div className="dash-table-wrapper advisory-roster-scroll">
+        <div
+          ref={rosterScrollRef}
+          className="dash-table-wrapper advisory-roster-scroll"
+        >
           <table className="dash-table" style={{ minWidth: "2040px" }}>
             <thead>
               <tr>
@@ -619,7 +638,8 @@ export function AdvisoryClass({ profile }) {
                           disabled={savingDemographics}
                           placeholder="Middle name"
                           aria-label={`Middle name for ${displayName}`}
-                          className="advisory-contact-input min-w-[140px] uppercase"
+                          className="advisory-contact-input uppercase"
+                          style={middleNameWidth}
                         />
                       </td>
                       <td>
@@ -711,7 +731,8 @@ export function AdvisoryClass({ profile }) {
                           disabled={savingDemographics}
                           placeholder="Zone, Street, Sitio"
                           aria-label={`Street address for ${displayName}`}
-                          className="advisory-contact-input min-w-[160px]"
+                          className="advisory-contact-input"
+                          style={streetAddressWidth}
                         />
                       </td>
                       <td className="min-w-[165px]">
@@ -762,7 +783,8 @@ export function AdvisoryClass({ profile }) {
                               : "Select type first"
                           }
                           aria-label={`Guardian name for ${displayName}`}
-                          className="advisory-contact-input min-w-[210px]"
+                          className="advisory-contact-input"
+                          style={guardianNameWidth}
                         />
                       </td>
                       <td className="min-w-[145px]">
@@ -821,6 +843,56 @@ export function AdvisoryClass({ profile }) {
           </table>
         </div>
       )}
+      {!loading && <StickyHorizontalScrollbar targetRef={rosterScrollRef} />}
+    </div>
+  );
+}
+
+// The roster is shown at full height, so its own horizontal scrollbar would sit
+// below the last learner. This bar stays at the bottom of the window instead
+// and drives the roster's sideways scroll.
+function StickyHorizontalScrollbar({ targetRef }) {
+  const barRef = useRef(null);
+  const [contentWidth, setContentWidth] = useState(0);
+  const [overflowing, setOverflowing] = useState(false);
+
+  useEffect(() => {
+    const target = targetRef.current;
+    const bar = barRef.current;
+    if (!target || !bar) return undefined;
+
+    const measure = () => {
+      setContentWidth(target.scrollWidth);
+      setOverflowing(target.scrollWidth > target.clientWidth + 1);
+    };
+    const syncBar = () => {
+      if (bar.scrollLeft !== target.scrollLeft) bar.scrollLeft = target.scrollLeft;
+    };
+    const syncTarget = () => {
+      if (target.scrollLeft !== bar.scrollLeft) target.scrollLeft = bar.scrollLeft;
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(target);
+    if (target.firstElementChild) observer.observe(target.firstElementChild);
+    target.addEventListener("scroll", syncBar, { passive: true });
+    bar.addEventListener("scroll", syncTarget, { passive: true });
+    return () => {
+      observer.disconnect();
+      target.removeEventListener("scroll", syncBar);
+      bar.removeEventListener("scroll", syncTarget);
+    };
+  }, [targetRef]);
+
+  return (
+    <div
+      ref={barRef}
+      className="advisory-hscroll"
+      style={{ visibility: overflowing ? "visible" : "hidden" }}
+      aria-hidden="true"
+    >
+      <div style={{ width: contentWidth, height: 1 }} />
     </div>
   );
 }

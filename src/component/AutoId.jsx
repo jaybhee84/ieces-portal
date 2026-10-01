@@ -430,9 +430,8 @@ export function AutoId({ profile }) {
   const [selectedId, setSelectedId] = useState("");
   const [selectedThreeIds, setSelectedThreeIds] = useState([]);
   const [printMode, setPrintMode] = useState("single"); // "single" | "double" | "triple" | "class"
-  const [classPrintMethod, setClassPrintMethod] = useState("duplex");
-  // Only Whole Class offers a paper choice; 1–3 IDs always print duplex.
-  const printMethod = printMode === "class" ? classPrintMethod : "duplex";
+  // The paper choice applies to every print mode, from a single ID to a class.
+  const [printMethod, setPrintMethod] = useState("duplex");
   const [filterAdviser, setFilterAdviser] = useState("");
   const [advisers, setAdvisers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -986,9 +985,12 @@ export function AutoId({ profile }) {
           ? frontPagesHtml + backPagesHtml
           : interleavedPagesHtml;
 
-      // Single, double, and triple always print duplex: fronts on one page and
-      // mirrored backs on the next. Whole-class printing keeps the existing page flow.
+      // Single, double, and triple print fronts on one page and backs on the
+      // next. Duplex mirrors the backs so each lands behind its front; ordinary
+      // paper keeps them in the same left-aligned order for cutting and attaching.
+      // Whole-class printing keeps the existing page flow.
       if (["single", "double", "triple"].includes(printMode)) {
+        const mirrorBacks = printMethod === "duplex";
         const focusedPageStyle = `width:7.9in;min-height:12.4in;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding-top:0.15in;page-break-after:always;`;
 
         const focusedFronts = queue
@@ -997,8 +999,7 @@ export function AutoId({ profile }) {
               `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "front")}</div>`,
           )
           .join("");
-        const focusedBacks = [...queue]
-          .reverse()
+        const focusedBacks = (mirrorBacks ? [...queue].reverse() : queue)
           .map(
             ({ raw: learner, idx: learnerIdx }) =>
               `<div>${buildCardHtml(templateDataUrl, learner, learnerIdx, "back")}</div>`,
@@ -1008,7 +1009,7 @@ export function AutoId({ profile }) {
         pagesHtml = `<div style="${focusedPageStyle}">
           <div style="${focusedGridStyle}">${focusedFronts}</div>
         </div>
-        <div style="${focusedPageStyle}align-items:flex-end;">
+        <div style="${focusedPageStyle}${mirrorBacks ? "align-items:flex-end;" : ""}">
           <div style="${focusedGridStyle}">${focusedBacks}</div>
         </div>`;
       }
@@ -1094,8 +1095,7 @@ export function AutoId({ profile }) {
           </div>
 
           {/* ── Paper / assembly method ── */}
-          {printMode === "class" ? (
-            <div>
+          <div>
               <label className="adv-label">Paper / Assembly Method</label>
               <div
                 style={{
@@ -1132,28 +1132,13 @@ export function AutoId({ profile }) {
                       name="printMethod"
                       value={v}
                       checked={printMethod === v}
-                      onChange={() => setClassPrintMethod(v)}
+                      onChange={() => setPrintMethod(v)}
                     />
                     {label}
                   </label>
                 ))}
               </div>
-            </div>
-          ) : (
-            <div>
-              <label className="adv-label">Paper / Assembly Method</label>
-              <div
-                style={{
-                  marginTop: "4px",
-                  fontSize: "0.86rem",
-                  fontWeight: "600",
-                  color: "#7b1a1a",
-                }}
-              >
-                🔄 Double-Sided / Duplex Photo Paper (always used for 1–3 IDs)
-              </div>
-            </div>
-          )}
+          </div>
 
           {/* ── Learner select (single mode) ── */}
           {printMethod === "duplex" && (

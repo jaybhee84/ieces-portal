@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
-import { validatePortalSession } from "./lib/portalAuth";
+import { SUPERADMIN_MODE_KEY, validatePortalSession } from "./lib/portalAuth";
 import LoginPage from "./component/LoginPage";
 import DashboardPage from "./component/DashboardPage";
 
@@ -62,6 +62,7 @@ export default function App() {
         sessionStorage.setItem("is_logged_in", "true");
       } else {
         sessionStorage.removeItem("is_logged_in");
+        sessionStorage.removeItem(SUPERADMIN_MODE_KEY);
       }
     });
 
