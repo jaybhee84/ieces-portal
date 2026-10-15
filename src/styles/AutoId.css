@@ -1,0 +1,36 @@
+/* Form fields need room for their text as well as vertical padding.
+   Keep the compact 32px table controls elsewhere unchanged. */
+.auto-id-form .table-select {
+    box-sizing: border-box;
+    height: auto;
+    min-height: 40px;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.auto-id-form .adv-label {
+    font-size: 0.7rem;
+    line-height: 1.4;
+}
+
+.auto-id-form .form-row > * {
+    min-width: 0;
+}
+
+.auto-id-form .auto-id-principal-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    align-items: end;
+}
+
+.auto-id-principal-row button {
+    min-height: 40px;
+}
+
+@media (max-width: 720px) {
+    .auto-id-form .form-row.three-col,
+    .auto-id-form .auto-id-principal-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

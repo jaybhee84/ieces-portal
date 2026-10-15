@@ -20,7 +20,8 @@ const textEm = (text) => {
   return measureContext.measureText(text).width / 100;
 };
 
-export default function NutritionPrintTable({ rows, weighingDate, gradeClass }) {
+// sbfpIds: ids of SBFP beneficiaries, whose rows are highlighted yellow.
+export default function NutritionPrintTable({ rows, weighingDate, gradeClass, sbfpIds }) {
   const ordered = [...rows].sort((a, b) =>
     (a.report.sex === "M" ? 0 : 1) - (b.report.sex === "M" ? 0 : 1) ||
     learnerDisplayName(a.student).localeCompare(learnerDisplayName(b.student)));
@@ -40,7 +41,7 @@ export default function NutritionPrintTable({ rows, weighingDate, gradeClass }) 
       <tbody>{ordered.map(({ student, report }, index) => {
         const [years, months] = String(report.ageYearMonth).split('.');
         const name = `${index + 1}. ${learnerDisplayName(student)}`;
-        return <tr key={student.id}>
+        return <tr key={student.id} className={sbfpIds?.has(String(student.id)) ? "nsr-sbfp" : undefined}>
           <td className="nsr-reference-name"><div><span style={{ "--name-em": textEm(name) || undefined }}>{name}</span></div></td>
           <td>{date(student.birthdate)}</td><td>{report.weightKg ?? "—"}</td>
           <td>{number(report.heightMeters, 3)}</td><td>{report.sex}</td>

@@ -11,7 +11,19 @@ import { TransferLearner } from "./TransferLearner";
 import { AutoId } from "./AutoId"; // <--- IMPORT AUTO ID
 import { Form137 } from "./Form137";
 import { TeacherProfile } from "./TeacherProfile";
-import { FileSpreadsheet, UserRound } from "lucide-react";
+import {
+  ArrowLeftRight,
+  BarChart3,
+  ClipboardPen,
+  Contact,
+  FileSpreadsheet,
+  LogOut,
+  RefreshCw,
+  Salad,
+  School,
+  Search,
+  UserRound,
+} from "lucide-react";
 import {
   adviserGradeKey,
   findOrgAdviserForProfile,
@@ -409,12 +421,16 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         <div className="dash-header-brand">
           <img src={iecesLogo} alt="IECES Logo" className="dash-logo" />
           <div>
-            <h1>IECES PORTAL</h1>
+            <h1>IECES Portal</h1>
             <p>Isabela East Central Elementary School</p>
           </div>
         </div>
 
         <div className="dash-header-user">
+          <span className="user-avatar" aria-hidden="true">
+            {(effectiveProfile?.first_name || effectiveProfile?.full_name || "U").charAt(0)}
+            {(effectiveProfile?.family_name || "").charAt(0)}
+          </span>
           <div className="user-details">
             <span className="user-name">
               {effectiveProfile?.first_name || effectiveProfile?.full_name || "User"}{" "}
@@ -424,7 +440,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               {hasTestSelection
                 ? testRole === "subject_teacher"
                   ? "Superadmin test · subject teacher"
-                  : `Superadmin test ·${effectiveProfile.role.replace("_", " ")} · ${gradeLabel(testGrade)} · ${testScope === "grade" ? "All classes" : "Specific class"}`
+                  : `Superadmin test · ${effectiveProfile.role.replace("_", " ")} · ${gradeLabel(testGrade)} · ${testScope === "grade" ? "All classes" : "Specific class"}`
                 : effectiveProfile?.role
                   ? effectiveProfile.role.replace("_", " ")
                   : "Teacher"}
@@ -440,6 +456,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
             </button>
           )}
           <button onClick={handleSignOutClick} className="dash-logout-btn">
+            <LogOut size={15} aria-hidden="true" />
             Sign Out
           </button>
         </div>
@@ -460,7 +477,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               className={`nav-item ${activeTab === "enrollment" ? "active" : ""}`}
               onClick={() => setActiveTab("enrollment")}
             >
-              <span className="nav-icon">📝</span> Enrollment
+              <ClipboardPen className="nav-icon" size={18} /> Enrollment
             </button>
 
             {isAdviser && (
@@ -468,7 +485,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
                 className={`nav-item ${activeTab === "advisory" ? "active" : ""}`}
                 onClick={() => setActiveTab("advisory")}
               >
-                <span className="nav-icon">🏫</span> Advisory Class
+                <School className="nav-icon" size={18} /> Advisory Class
               </button>
             )}
 
@@ -486,7 +503,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
                 className={`nav-item ${activeTab === "nutrition" ? "active" : ""}`}
                 onClick={() => setActiveTab("nutrition")}
               >
-                <span className="nav-icon">🥗</span> Nutritional Status
+                <Salad className="nav-icon" size={18} /> Nutritional Status
               </button>
             )}
 
@@ -494,7 +511,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               className={`nav-item ${activeTab === "data" ? "active" : ""}`}
               onClick={() => setActiveTab("data")}
             >
-              <span className="nav-icon">📊</span> Enrollment Information
+              <BarChart3 className="nav-icon" size={18} /> Enrollment Information
             </button>
 
             {/* AUTO ID TAB */}
@@ -503,7 +520,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               className={`nav-item ${activeTab === "autoid" ? "active" : ""}`}
               onClick={() => setActiveTab("autoid")}
             >
-              <span className="nav-icon">🪪</span> AutoID
+              <Contact className="nav-icon" size={18} /> AutoID
             </button>
             )}
 
@@ -515,7 +532,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
                 }`}
                 onClick={() => setActiveTab("transfer_learner")}
               >
-                <span className="nav-icon">🔄</span> Transfer Learner
+                <ArrowLeftRight className="nav-icon" size={18} /> Transfer Learner
               </button>
             )}
 
@@ -523,7 +540,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               className={`nav-item ${activeTab === "search" ? "active" : ""}`}
               onClick={() => setActiveTab("search")}
             >
-              <span className="nav-icon">🔍</span> Search Learner
+              <Search className="nav-icon" size={18} /> Search Learner
             </button>
           </div>
 
@@ -533,7 +550,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
               className="sidebar-update-btn"
               onClick={() => setShowUpdateModal(true)}
             >
-              <span className="sidebar-update-icon">↑</span> Check for Updates
+              <RefreshCw size={14} aria-hidden="true" /> Check for Updates
             </button>
             {appVersion && (
               <span className="sidebar-version">v{appVersion}</span>

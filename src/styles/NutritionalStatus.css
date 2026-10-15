@@ -41,6 +41,10 @@
 .nsr-reference-table tbody td:nth-child(2) { white-space: nowrap; }
 .nsr-reference-table thead { display: table-header-group; }
 .nsr-reference-table tr { break-inside: avoid; }
+/* SBFP beneficiaries: yellow row, kept when printing */
+.nsr-reference-table tr.nsr-sbfp td { background: #fff27a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.nsr-sbfp-legend { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; font-size: 11px; color: #5c4a4a; }
+.nsr-sbfp-swatch { width: 14px; height: 10px; border: 1px solid #c9b400; background: #fff27a; border-radius: 2px; }
 
 .nsr-tally-section { display: grid; grid-template-columns: 1fr 1fr; gap: 6pt 12pt; margin-top: 8pt; break-inside: avoid; }
 .nsr-tally-table { width: 100%; border-collapse: collapse; }

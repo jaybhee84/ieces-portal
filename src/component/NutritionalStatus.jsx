@@ -1,5 +1,6 @@
 import { usePrintPreview } from "./PrintPreview/PrintPreviewContext";
 import NutritionPrintTable from "./NutritionPrintTable";
+import { isSbfpByStatus, isSbfpWholeGrade, sbfpConfigIsSet, useSbfpConfig } from "../lib/sbfp";
 import React, { useEffect, useRef, useState } from "react";
 import { Download, Printer } from "lucide-react";
 import { supabase } from "../lib/supabase";
@@ -186,6 +187,22 @@ export function NutritionalStatus({ profile }) {
     (entry) => entry.bmi !== "—" || entry.hfa !== "—",
   ).length;
 
+  const sbfp = useSbfpConfig();
+  // Whole-grade beneficiaries (e.g. Kinder, Grade 1) are not highlighted;
+  // only learners in other grades who qualify by their weighing are.
+  const sbfpWholeGradeCount = students.filter((student) =>
+    isSbfpWholeGrade(student, sbfp.config),
+  ).length;
+  const sbfpIds = new Set(
+    students
+      .filter(
+        (student) =>
+          !isSbfpWholeGrade(student, sbfp.config) &&
+          isSbfpByStatus(student, sbfp.config),
+      )
+      .map((student) => String(student.id)),
+  );
+
   const reportRows = [...students]
     .sort((left, right) =>
       learnerDisplayName(left).localeCompare(learnerDisplayName(right)),
@@ -354,6 +371,27 @@ export function NutritionalStatus({ profile }) {
                   meta={UNKNOWN_META}
                 />
               </div>
+              <p className="nsr-sbfp-legend">
+                <span className="nsr-sbfp-swatch" aria-hidden="true" />
+                {sbfp.status === "loading" && "Loading SBFP beneficiary settings…"}
+                {sbfp.status === "error" &&
+                  "Could not load the SBFP beneficiary settings from the server, so no rows are highlighted."}
+                {sbfp.status === "ready" && !sbfpConfigIsSet(sbfp.config) &&
+                  "The SDO has not set the SBFP beneficiary criteria in the BMI app yet, so no rows are highlighted."}
+                {sbfp.status === "ready" &&
+                  sbfpConfigIsSet(sbfp.config) &&
+                  sbfpWholeGradeCount === students.length &&
+                  `Every learner in this class is an SBFP beneficiary (${sbfp.config.grades.join(", ")} are included as whole grades), so no rows are highlighted.`}
+                {sbfp.status === "ready" && sbfpConfigIsSet(sbfp.config) && sbfpWholeGradeCount < students.length && (
+                  <span>
+                    <strong>{sbfpIds.size}</strong> SBFP{" "}
+                    {sbfpIds.size === 1 ? "beneficiary" : "beneficiaries"}, highlighted yellow
+                    in the report. Based on the SDO settings (
+                    {sbfp.config.criteria.length ? sbfp.config.criteria.join(", ") : "no status criteria"}
+                    ) and each learner's Baseline weighing.
+                  </span>
+                )}
+              </p>
             </div>
 
             <div className="p-3 rounded-xl bg-white shadow-[0_2px_14px_rgba(123,26,26,0.07)] border border-[#eee5e1] mb-3">
@@ -409,6 +447,7 @@ export function NutritionalStatus({ profile }) {
                 rows={reportRows}
                 weighingDate={latestWeighingDate}
                 gradeClass={gradeClassLabel}
+                sbfpIds={sbfpIds}
               />
               <div className="nsr-tally-section">
                 <table className="nsr-tally-table">

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { adviserGradeKey, orgAdviserName } from "../lib/orgAdvisers";
 import { PHILIRI_READING_CATEGORIES } from "../lib/readingOptions";
+import { Camera, RotateCcw } from "lucide-react";
+import "../styles/EnrollmentForm.css";
 
 // List of all 45 Barangays in Isabela City
 const ISABELA_CITY_BARANGAYS = [
@@ -713,10 +715,11 @@ export function EnrollmentForm({ profile }) {
   };
 
   return (
-    <div className="max-w-6xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-slate-200 relative">
-      <h2 className="text-2xl font-bold text-slate-800 mb-6 border-b pb-3">
-        Learners Information
-      </h2>
+    <div className="enroll max-w-6xl mx-auto relative">
+      <header className="enroll-header">
+        <h2>Learners Information</h2>
+        <p>Enter the learner's details, parents or guardian, and home address, then submit to enroll.</p>
+      </header>
 
       {/* Error Message Banner if submission fails */}
       {errorMessage && (
@@ -768,6 +771,8 @@ export function EnrollmentForm({ profile }) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           {/* LEFT SIDE: Form Inputs */}
           <div className="lg:col-span-2 space-y-6">
+            <h3 className="enroll-section-title">Learner details</h3>
+
             {/* Grade Level, Adviser, LRN */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
@@ -938,7 +943,7 @@ export function EnrollmentForm({ profile }) {
                   type="number"
                   value={formData.age}
                   readOnly
-                  className="w-full p-2.5 border rounded-lg text-sm bg-slate-100 font-bold text-blue-600 cursor-not-allowed"
+                  className="w-full p-2.5 border rounded-lg text-sm bg-slate-100 font-semibold cursor-not-allowed"
                 />
               </div>
               <div>
@@ -1013,7 +1018,7 @@ export function EnrollmentForm({ profile }) {
                         is_4ps_beneficiary: e.target.checked,
                       })
                     }
-                    className="w-4 h-4 text-blue-600 rounded"
+                    className="w-4 h-4 rounded"
                   />
                   4P's Beneficiary
                 </label>
@@ -1048,8 +1053,10 @@ export function EnrollmentForm({ profile }) {
               </div>
             </div>
 
+            <h3 className="enroll-section-title enroll-section-break">Parents and guardian</h3>
+
             {/* Father's Name Section */}
-            <div className="border-t pt-4">
+            <div className="enroll-subsection">
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-xs font-bold text-slate-700 uppercase">
                   Father's Name
@@ -1086,7 +1093,7 @@ export function EnrollmentForm({ profile }) {
                 <input
                   type="text"
                   placeholder={
-                    fatherDeceased ? "DECEASED" : "Father's Family Name"
+                    fatherDeceased ? "DECEASED" : "Family name"
                   }
                   value={fatherDeceased ? "" : father.family_name}
                   disabled={fatherDeceased}
@@ -1101,7 +1108,7 @@ export function EnrollmentForm({ profile }) {
                 <input
                   type="text"
                   placeholder={
-                    fatherDeceased ? "DECEASED" : "Father's First Name"
+                    fatherDeceased ? "DECEASED" : "First name"
                   }
                   value={fatherDeceased ? "" : father.first_name}
                   disabled={fatherDeceased}
@@ -1116,7 +1123,7 @@ export function EnrollmentForm({ profile }) {
                 <input
                   type="text"
                   placeholder={
-                    fatherDeceased ? "DECEASED" : "Father's Middle Name"
+                    fatherDeceased ? "DECEASED" : "Middle name"
                   }
                   value={fatherDeceased ? "" : father.middle_name}
                   disabled={fatherDeceased}
@@ -1130,7 +1137,7 @@ export function EnrollmentForm({ profile }) {
                 />
                 <input
                   type="tel"
-                  placeholder="Father's Contact Number"
+                  placeholder="Contact number"
                   value={fatherDeceased ? "" : father.contact_number || ""}
                   disabled={fatherDeceased}
                   onChange={(e) =>
@@ -1142,7 +1149,7 @@ export function EnrollmentForm({ profile }) {
             </div>
 
             {/* Mother's Name Section */}
-            <div className="border-t pt-4">
+            <div className="enroll-subsection">
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-xs font-bold text-slate-700 uppercase">
                   Mother's Maiden Name
@@ -1179,7 +1186,7 @@ export function EnrollmentForm({ profile }) {
                 <input
                   type="text"
                   placeholder={
-                    motherDeceased ? "DECEASED" : "Mother's Family Name"
+                    motherDeceased ? "DECEASED" : "Family name"
                   }
                   value={motherDeceased ? "" : mother.family_name}
                   disabled={motherDeceased}
@@ -1194,7 +1201,7 @@ export function EnrollmentForm({ profile }) {
                 <input
                   type="text"
                   placeholder={
-                    motherDeceased ? "DECEASED" : "Mother's First Name"
+                    motherDeceased ? "DECEASED" : "First name"
                   }
                   value={motherDeceased ? "" : mother.first_name}
                   disabled={motherDeceased}
@@ -1209,7 +1216,7 @@ export function EnrollmentForm({ profile }) {
                 <input
                   type="text"
                   placeholder={
-                    motherDeceased ? "DECEASED" : "Mother's Middle Name"
+                    motherDeceased ? "DECEASED" : "Middle name"
                   }
                   value={motherDeceased ? "" : mother.middle_name}
                   disabled={motherDeceased}
@@ -1223,7 +1230,7 @@ export function EnrollmentForm({ profile }) {
                 />
                 <input
                   type="tel"
-                  placeholder="Mother's Contact Number"
+                  placeholder="Contact number"
                   value={motherDeceased ? "" : mother.contact_number || ""}
                   disabled={motherDeceased}
                   onChange={(e) =>
@@ -1235,8 +1242,8 @@ export function EnrollmentForm({ profile }) {
             </div>
 
             {/* Guardian Section */}
-            <div className="border-t pt-4">
-              <label className="flex items-center cursor-pointer gap-2 text-sm font-bold text-slate-700 uppercase mb-3">
+            <div className="enroll-subsection">
+              <label className="flex items-center cursor-pointer gap-2 text-sm font-semibold text-slate-700 mb-3">
                 <input
                   type="checkbox"
                   checked={hasGuardian}
@@ -1248,7 +1255,7 @@ export function EnrollmentForm({ profile }) {
                       setMotherDeceased(false);
                     }
                   }}
-                  className="w-4 h-4 text-blue-600 rounded"
+                  className="w-4 h-4 rounded"
                 />
                 Guardian (Other than Parents / Orphan)
               </label>
@@ -1367,8 +1374,10 @@ export function EnrollmentForm({ profile }) {
               )}
             </div>
 
+            <h3 className="enroll-section-title enroll-section-break">Address</h3>
+
             {/* Address Section */}
-            <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
                   Barangay (Isabela City)
@@ -1404,12 +1413,10 @@ export function EnrollmentForm({ profile }) {
           </div>
 
           {/* RIGHT SIDE: Webcam & Photo Capture Panel */}
-          <div className="lg:col-span-1 p-5 bg-slate-50 border rounded-xl flex flex-col items-center justify-start sticky top-4">
-            <label className="block text-xs font-bold text-slate-600 uppercase mb-4 text-center">
-              Learner Photo
-            </label>
+          <div className="enroll-photo-panel lg:col-span-1 flex flex-col items-center justify-start sticky top-4">
+            <h3 className="enroll-section-title self-stretch">Learner photo</h3>
 
-            <div className="w-52 h-52 bg-slate-200 rounded-lg overflow-hidden border border-slate-300 flex items-center justify-center mb-4 relative shadow-inner">
+            <div className="enroll-photo-frame w-52 h-52 overflow-hidden flex items-center justify-center mb-4 relative">
               {capturedPhoto ? (
                 <img
                   src={capturedPhoto}
@@ -1428,8 +1435,9 @@ export function EnrollmentForm({ profile }) {
               )}
 
               {!isCameraActive && !capturedPhoto && (
-                <span className="text-slate-400 text-xs font-medium text-center px-4">
-                  No Photo Captured
+                <span className="enroll-photo-empty">
+                  <Camera size={26} aria-hidden="true" />
+                  No photo yet
                 </span>
               )}
             </div>
@@ -1440,8 +1448,9 @@ export function EnrollmentForm({ profile }) {
                 <button
                   type="button"
                   onClick={startCamera}
-                  className="w-full bg-slate-700 hover:bg-slate-800 text-white text-xs py-2.5 rounded-lg font-semibold transition-colors"
+                  className="enroll-btn enroll-btn-secondary"
                 >
+                  <Camera size={15} aria-hidden="true" />
                   Start Camera
                 </button>
               )}
@@ -1456,14 +1465,14 @@ export function EnrollmentForm({ profile }) {
                   <button
                     type="button"
                     onClick={capturePhoto}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs py-2.5 rounded-lg font-semibold transition-colors"
+                    className="enroll-btn enroll-btn-primary"
                   >
                     Take Photo
                   </button>
                   <button
                     type="button"
                     onClick={stopCamera}
-                    className="w-full bg-gray-500 hover:bg-gray-600 text-white text-xs py-2.5 rounded-lg font-semibold transition-colors"
+                    className="enroll-btn enroll-btn-ghost"
                   >
                     Cancel
                   </button>
@@ -1474,20 +1483,20 @@ export function EnrollmentForm({ profile }) {
                 <button
                   type="button"
                   onClick={retakePhoto}
-                  className="w-full bg-amber-600 hover:bg-amber-700 text-white text-xs py-2.5 rounded-lg font-semibold transition-colors"
+                  className="enroll-btn enroll-btn-secondary"
                 >
+                  <RotateCcw size={15} aria-hidden="true" />
                   Retake Photo
                 </button>
               )}
             </div>
 
             {/* Submit Button */}
-            <button
-              type="submit"
-              className="w-full max-w-[208px] mt-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg shadow transition-colors"
-            >
-              Submit
-            </button>
+            <div className="enroll-submit">
+              <button type="submit" className="enroll-btn enroll-btn-primary enroll-btn-lg">
+                Submit enrollment
+              </button>
+            </div>
           </div>
         </div>
       </form>

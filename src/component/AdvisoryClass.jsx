@@ -19,6 +19,8 @@ import {
   optionsWithCurrentValue,
 } from "../lib/demographicOptions";
 import { PHILIRI_READING_CATEGORIES } from "../lib/readingOptions";
+import LearnerAvatar from "./LearnerAvatar";
+import LearnerDetailsDialog from "./LearnerDetailsDialog";
 
 const parseStreetFromAddress = (address) => {
   const str = String(address || "").trim();
@@ -91,6 +93,8 @@ export function AdvisoryClass({ profile }) {
   const [message, setMessage] = useState("");
   const [orgAdviser, setOrgAdviser] = useState(null);
   const [demographicDrafts, setDemographicDrafts] = useState({});
+  const [detailsStudentId, setDetailsStudentId] = useState(null);
+  const closeDetails = React.useCallback(() => setDetailsStudentId(null), []);
   const [dirtyStudentIds, setDirtyStudentIds] = useState([]);
   const [savingDemographics, setSavingDemographics] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -601,25 +605,34 @@ export function AdvisoryClass({ profile }) {
                     middle_name: draft.middle_name ?? st.middle_name,
                   });
                   return (
-                    <tr key={st.id}>
+                    <tr
+                      key={st.id}
+                      className="roster-row-clickable"
+                      onClick={(event) => {
+                        // Editing a cell must not open the details window.
+                        if (event.target.closest("input, select, textarea, button, a, label")) return;
+                        setDetailsStudentId(String(st.id));
+                      }}
+                    >
                       <td className="sticky-roster-no font-bold text-center text-[#7b1a1a]">
                         {idx + 1}
                       </td>
                       <td className="sticky-roster-name font-bold">
-                        {displayName}
+                        <button
+                          type="button"
+                          className="roster-name-btn"
+                          onClick={() => setDetailsStudentId(String(st.id))}
+                          title="View learner details"
+                        >
+                          {displayName}
+                        </button>
                       </td>
                       <td className="sticky-roster-photo">
-                        {photo ? (
-                          <img
-                            src={photo}
-                            alt={`${displayName} profile`}
-                            className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 grid place-items-center text-slate-400">
-                            👤
-                          </div>
-                        )}
+                        <LearnerAvatar
+                          photo={photo}
+                          learner={st}
+                          label={`${displayName} profile`}
+                        />
                       </td>
                       <td className="min-w-[160px]">
                         <input
@@ -844,6 +857,20 @@ export function AdvisoryClass({ profile }) {
         </div>
       )}
       {!loading && <StickyHorizontalScrollbar targetRef={rosterScrollRef} />}
+      {(() => {
+        const detailsStudent = detailsStudentId
+          ? students.find((student) => String(student.id) === detailsStudentId)
+          : null;
+        if (!detailsStudent) return null;
+        const draft = demographicDrafts[detailsStudentId] || {};
+        return (
+          <LearnerDetailsDialog
+            learner={{ ...detailsStudent, ...draft }}
+            hasUnsavedChanges={dirtyStudentIds.map(String).includes(detailsStudentId)}
+            onClose={closeDetails}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -889,8 +916,10 @@ function StickyHorizontalScrollbar({ targetRef }) {
     <div
       ref={barRef}
       className="advisory-hscroll"
-      style={{ visibility: overflowing ? "visible" : "hidden" }}
-      aria-hidden="true"
+      style={{ display: overflowing ? "block" : "none" }}
+      tabIndex={overflowing ? 0 : -1}
+      role="region"
+      aria-label="Scroll learner roster horizontally"
     >
       <div style={{ width: contentWidth, height: 1 }} />
     </div>

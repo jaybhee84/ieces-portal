@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { QRCodeSVG } from "qrcode.react";
 import idTemplate from "../image/id-template.png";
+import "../styles/AutoId.css";
 import {
   adviserGradeKey,
   isOrgAdviser,
@@ -638,6 +639,12 @@ export function AutoId({ profile }) {
       );
     },
   );
+  const dropdownLearners = [...adviserLearners].sort((a, b) =>
+    learnerDisplayName(a).localeCompare(learnerDisplayName(b), "en", {
+      sensitivity: "base",
+      numeric: true,
+    }),
+  );
 
   useEffect(() => {
     if (
@@ -1073,11 +1080,12 @@ export function AutoId({ profile }) {
             batch).
           </p>
         </div>
-        <div className="dash-form">
+        <div className="dash-form auto-id-form">
           {/* ── Print Mode ── */}
           <div>
-            <label className="adv-label">Print Mode</label>
+            <label className="adv-label" htmlFor="auto-id-print-mode">Print Mode</label>
             <select
+              id="auto-id-print-mode"
               className="table-select"
               style={{
                 width: "min(100%, 420px)",
@@ -1180,8 +1188,9 @@ export function AutoId({ profile }) {
 
           {printMode === "single" && (
             <div>
-              <label className="adv-label">Class List</label>
+              <label className="adv-label" htmlFor="auto-id-learner">Class List</label>
               <select
+                id="auto-id-learner"
                 className="table-select"
                 style={{ width: "min(100%, 520px)", padding: "8px" }}
                 value={selectedId}
@@ -1190,9 +1199,9 @@ export function AutoId({ profile }) {
                 {adviserLearners.length === 0 && (
                   <option value="">No learners assigned to this adviser</option>
                 )}
-                {adviserLearners.map((st) => (
+                {dropdownLearners.map((st) => (
                   <option key={st.id} value={st.id}>
-                    {formatAutoIdName(st)} — {st.lrn || "No LRN"}
+                    {learnerDisplayName(st).toUpperCase()} — {st.lrn || "No LRN"}
                   </option>
                 ))}
               </select>
@@ -1209,6 +1218,7 @@ export function AutoId({ profile }) {
                 {Array.from({ length: focusedPrintCount }, (_, slot) => (
                   <select
                     key={slot}
+                    aria-label={`Learner ${slot + 1}`}
                     className="table-select"
                     style={{ width: "100%", padding: "8px" }}
                     value={selectedThreeIds[slot] || ""}
@@ -1222,7 +1232,7 @@ export function AutoId({ profile }) {
                     }}
                   >
                     <option value="">Select learner {slot + 1}</option>
-                    {adviserLearners.map((st) => {
+                    {dropdownLearners.map((st) => {
                       const isChosenElsewhere = selectedThreeIds.some(
                         (id, chosenSlot) =>
                           chosenSlot !== slot && String(id) === String(st.id),
@@ -1233,7 +1243,7 @@ export function AutoId({ profile }) {
                           value={st.id}
                           disabled={isChosenElsewhere}
                         >
-                          {formatAutoIdName(st)} — {st.lrn || "No LRN"}
+                          {learnerDisplayName(st).toUpperCase()} — {st.lrn || "No LRN"}
                         </option>
                       );
                     })}
@@ -1333,12 +1343,12 @@ export function AutoId({ profile }) {
 
           {/* Principal + Save */}
           <div
-            className="form-row"
-            style={{ gridTemplateColumns: "1fr 1fr auto" }}
+            className="form-row auto-id-principal-row"
           >
             <div>
-              <label className="adv-label">Principal Name</label>
+              <label className="adv-label" htmlFor="auto-id-principal-name">Principal Name</label>
               <input
+                id="auto-id-principal-name"
                 type="text"
                 className="table-select"
                 style={{
@@ -1352,8 +1362,9 @@ export function AutoId({ profile }) {
               />
             </div>
             <div>
-              <label className="adv-label">Principal Position</label>
+              <label className="adv-label" htmlFor="auto-id-principal-position">Principal Position</label>
               <select
+                id="auto-id-principal-position"
                 className="table-select"
                 style={{ width: "100%", padding: "8px" }}
                 value={principalPos}
