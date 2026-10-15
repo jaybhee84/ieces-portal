@@ -9,7 +9,7 @@ import {
   resolvePortalLogin,
   validatePortalSession,
 } from "../lib/portalAuth";
-import iecesLogo from "../image/ieceslogo.png";
+import iecesLogo from "/iecesportal.png";
 import enrollmentA from "../image/enrollmentA.png";
 import enrollmentB from "../image/enrollmentB.png";
 import enrollmentC from "../image/enrollmentC.png";

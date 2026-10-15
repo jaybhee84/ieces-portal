@@ -20,7 +20,9 @@
     "productName": "IECES Portal",
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "public/iecesportal.ico",
+      "public/iecesportal.png"
     ],
     "directories": {
       "output": "release"

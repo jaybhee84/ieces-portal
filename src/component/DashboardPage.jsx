@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { SUPERADMIN_MODE_KEY } from "../lib/portalAuth";
-import iecesLogo from "../image/ieceslogo.png";
+import iecesLogo from "/iecesportal.png";
 import "../styles/DashboardPage.css";
 import { EnrollmentForm } from "./EnrollmentForm";
 import { EnrollmentDataTab } from "./EnrollmentDataTab";
