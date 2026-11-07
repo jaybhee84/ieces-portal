@@ -62,6 +62,7 @@ jobs:
         shell: bash
         run: |
           if gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --repo "${{ github.repository }}" --target "$GITHUB_SHA"
             echo "Draft release $RELEASE_TAG exists; the build will upload into it."
           else
             gh release create "$RELEASE_TAG" --repo "${{ github.repository }}" --draft --target "$GITHUB_SHA" --title "${RELEASE_TAG#v}" --notes ""
