@@ -2,7 +2,7 @@ name: Release
 
 # Releasing is: bump package.json's version, commit, push to main.
 # This repository is public, so Actions minutes are free and the Windows
-# installer is built and published here (no macOS build). As in Tax-E, a
+# installer and Android test APK are built and published here (no macOS build). A
 # version is released once: a single draft release is created, the build
 # uploads into it, and it is published only after the build succeeds.
 # Pushes whose version is already released do nothing.
@@ -77,7 +77,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -92,8 +92,14 @@ jobs:
         shell: bash
         run: gh release upload "$RELEASE_TAG" release/IECES-Portal-Setup-*.exe release/IECES-Portal-Setup-*.exe.blockmap release/latest.yml --repo "${{ github.repository }}" --clobber
 
+  build-android:
+    needs: [check-version, create-release]
+    uses: ./.github/workflows/android.yml
+    with:
+      release_tag: ${{ needs.check-version.outputs.tag }}
+
   publish-release:
-    needs: [check-version, build-windows]
+    needs: [check-version, build-windows, build-android]
     runs-on: ubuntu-latest
     steps:
       - name: Publish the GitHub Release

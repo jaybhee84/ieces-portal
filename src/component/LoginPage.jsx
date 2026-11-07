@@ -464,6 +464,11 @@ function LoginClock({ weather }) {
             </span>
           )}
         </div>
+        {weather?.current.heatIndex != null && (
+          <div className="login-heat-index">
+            Heat index {weather.current.heatIndex}°C · estimated
+          </div>
+        )}
       </div>
       {weather && (
         <ul className="login-forecast" aria-label="Today's forecast">

@@ -6,7 +6,7 @@
 const WEATHER_URL =
   "https://api.open-meteo.com/v1/forecast" +
   "?latitude=6.7013&longitude=121.9711" +
-  "&current=weather_code,temperature_2m" +
+  "&current=weather_code,temperature_2m,relative_humidity_2m" +
   "&hourly=weather_code,temperature_2m" +
   "&forecast_days=1&timezone=Asia%2FManila";
 
@@ -15,6 +15,27 @@ export const FORECAST_SLOTS = [
   { key: "noon", name: "Noon", hour: 12 },
   { key: "afternoon", name: "Afternoon", hour: 15 },
 ];
+
+// NWS heat index, including the low/high humidity adjustments:
+// https://www.wpc.ncep.noaa.gov/html/heatindex_equation.shtml
+export function heatIndexCelsius(temperature, humidity) {
+  if (!Number.isFinite(temperature) || !Number.isFinite(humidity) || humidity < 0 || humidity > 100) return null;
+  const t = temperature * 9 / 5 + 32;
+  const r = humidity;
+  let index = (0.5 * (t + 61 + (t - 68) * 1.2 + r * 0.094) + t) / 2;
+  if (index >= 80) {
+    index = -42.379 + 2.04901523 * t + 10.14333127 * r
+      - 0.22475541 * t * r - 0.00683783 * t * t - 0.05481717 * r * r
+      + 0.00122874 * t * t * r + 0.00085282 * t * r * r
+      - 0.00000199 * t * t * r * r;
+    if (r < 13 && t >= 80 && t <= 112) {
+      index -= (13 - r) / 4 * Math.sqrt((17 - Math.abs(t - 95)) / 17);
+    } else if (r > 85 && t >= 80 && t <= 87) {
+      index += (r - 85) / 10 * (87 - t) / 5;
+    }
+  }
+  return Math.round((index - 32) * 5 / 9);
+}
 
 // WMO weather codes grouped into the conditions the scene can draw.
 export function describeWeatherCode(code) {
@@ -41,6 +62,7 @@ export async function fetchLoginWeather(signal) {
   const current = {
     ...describeWeatherCode(data.current.weather_code),
     temperature: Math.round(data.current.temperature_2m),
+    heatIndex: heatIndexCelsius(data.current.temperature_2m, data.current.relative_humidity_2m),
   };
 
   // Hourly times are local ("2026-10-16T08:00"), so match on the hour.

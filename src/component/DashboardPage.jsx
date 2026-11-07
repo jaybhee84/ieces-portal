@@ -11,6 +11,8 @@ import { TransferLearner } from "./TransferLearner";
 import { AutoId } from "./AutoId"; // <--- IMPORT AUTO ID
 import { Form137 } from "./Form137";
 import { TeacherProfile } from "./TeacherProfile";
+import { ClassSchedule } from "./ClassSchedule";
+import { KinderProgressCard } from "./KinderProgressCard";
 import {
   ArrowLeftRight,
   BarChart3,
@@ -23,6 +25,8 @@ import {
   School,
   Search,
   UserRound,
+  Menu,
+  CalendarDays,
 } from "lucide-react";
 import {
   adviserGradeKey,
@@ -196,6 +200,7 @@ function SidebarUpdateModal({ onClose }) {
 
 export default function DashboardPage({ session, userSession, onLogout }) {
   const [activeTab, setActiveTab] = useState("enrollment");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [appVersion, setAppVersion] = useState("");
@@ -263,7 +268,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         },
       );
 
-      if (allowError || !allowed) {
+      if (navigator.onLine && (allowError || !allowed)) {
         if (typeof onLogout === "function") {
           await onLogout();
         }
@@ -315,15 +320,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
   };
 
   const handleSignOutClick = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.error("Error during sign out:", err);
-    } finally {
-      if (typeof onLogout === "function") {
-        onLogout();
-      }
-    }
+    if (typeof onLogout === "function") await onLogout();
   };
 
   if (loading) {
@@ -398,14 +395,12 @@ export default function DashboardPage({ session, userSession, onLogout }) {
         orgAdviserName(left).localeCompare(orgAdviserName(right))
       );
     });
-  // These decide which tabs are shown. Superadmin gets every tab, whatever
-  // role is being tested; each tab still loads data for the selected teacher.
+  // Transfer access follows the selected role, including in superadmin test views.
   const isAdviser =
     isSuperadmin ||
     effectiveProfile?.role === "adviser" ||
     effectiveProfile?.role === "grade_chairman";
-  const isGradeChairman =
-    isSuperadmin || effectiveProfile?.role === "grade_chairman";
+  const isGradeChairman = effectiveProfile?.role === "grade_chairman";
   const isSubjectTeacher =
     !isSuperadmin && effectiveProfile?.role === "subject_teacher";
   const gradeLabel = (grade) =>
@@ -419,6 +414,9 @@ export default function DashboardPage({ session, userSession, onLogout }) {
       {/* Top Header */}
       <header className="dash-header">
         <div className="dash-header-brand">
+          <button type="button" className="mobile-menu-toggle" aria-label="Toggle navigation" aria-expanded={mobileMenuOpen} aria-controls="portal-navigation" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+            <Menu size={22} aria-hidden="true" />
+          </button>
           <img src={iecesLogo} alt="IECES Logo" className="dash-logo" />
           <div>
             <h1>IECES Portal</h1>
@@ -464,13 +462,16 @@ export default function DashboardPage({ session, userSession, onLogout }) {
 
       <div className="dash-body">
         {/* Navigation Sidebar */}
-        <nav className="dash-sidebar">
-          <div className="sidebar-menu">
+        <nav id="portal-navigation" aria-label="Main navigation" className={`dash-sidebar${mobileMenuOpen ? ' is-open' : ''}`}>
+          <div className="sidebar-menu" onClick={(event) => { if (event.target.closest('.nav-item')) setMobileMenuOpen(false); }}>
             <button
               className={`nav-item ${activeTab === "teacher_profile" ? "active" : ""}`}
               onClick={() => setActiveTab("teacher_profile")}
             >
               <UserRound className="nav-icon" size={18} /> Teacher Profile
+            </button>
+            <button className={`nav-item ${activeTab === "schedule" ? "active" : ""}`} onClick={() => setActiveTab("schedule")}>
+              <CalendarDays className="nav-icon" size={18} /> Class Schedule &amp; Workload
             </button>
 
             <button
@@ -491,10 +492,10 @@ export default function DashboardPage({ session, userSession, onLogout }) {
 
             {isAdviser && (
               <button
-                className={`nav-item ${activeTab === "form137" ? "active" : ""}`}
-                onClick={() => setActiveTab("form137")}
+              className={`nav-item ${activeTab === "form137" || activeTab === "kinder_card" ? "active" : ""}`}
+              onClick={() => setActiveTab(adviserGradeKey(effectiveProfile?.grade_level_assigned) === "0" ? "kinder_card" : "form137")}
               >
-                <FileSpreadsheet className="nav-icon" size={18} /> Form 137
+                <FileSpreadsheet className="nav-icon" size={18} /> {adviserGradeKey(effectiveProfile?.grade_level_assigned) === "0" ? "Kinder Class Card" : "Form 137"}
               </button>
             )}
 
@@ -545,7 +546,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
           </div>
 
           {/* Sidebar footer — Check for Updates + version */}
-          <div className="sidebar-footer">
+          {window.electronAPI && <div className="sidebar-footer">
             <button
               className="sidebar-update-btn"
               onClick={() => setShowUpdateModal(true)}
@@ -555,7 +556,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
             {appVersion && (
               <span className="sidebar-version">v{appVersion}</span>
             )}
-          </div>
+          </div>}
         </nav>
 
         {/* Update modal */}
@@ -573,12 +574,14 @@ export default function DashboardPage({ session, userSession, onLogout }) {
             />
           )}
           {activeTab === "enrollment" && <EnrollmentForm profile={effectiveProfile} />}
+          {activeTab === "schedule" && <ClassSchedule profile={effectiveProfile} />}
           {isAdviser && (
             <div style={{ display: activeTab === "advisory" ? "block" : "none" }}>
               <AdvisoryClass profile={effectiveProfile} />
             </div>
           )}
           {activeTab === "form137" && isAdviser && <Form137 profile={effectiveProfile} />}
+          {activeTab === "kinder_card" && isAdviser && adviserGradeKey(effectiveProfile?.grade_level_assigned) === "0" && <KinderProgressCard profile={effectiveProfile} />}
           {isAdviser && (
             <div style={{ display: activeTab === "nutrition" ? "block" : "none" }}>
               <NutritionalStatus profile={effectiveProfile} />

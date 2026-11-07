@@ -41,8 +41,8 @@ export const HAZ_CLASSIFICATIONS = Object.entries(HAZ_META).map(([label, meta]) 
 // ── Basic calculations ────────────────────────────────────────────────────
 
 export function normalizeHeightCm(height) {
-  const value = parseFloat(height);
-  if (!value || value <= 0) return null;
+  const value = Number(height);
+  if (!Number.isFinite(value) || value <= 0) return null;
   // Learner height is stored in centimetres. Support older/imported records
   // that were entered in metres (for example, 1.28 instead of 128).
   return value <= 3 ? value * 100 : value;
@@ -51,8 +51,8 @@ export function normalizeHeightCm(height) {
 // Canonical height unit used by forms, records, and CSV files.
 // Values above 3 are treated as legacy centimetre values.
 export function normalizeHeightMeters(height) {
-  const value = parseFloat(height);
-  if (!value || value <= 0) return null;
+  const value = Number(height);
+  if (!Number.isFinite(value) || value <= 0) return null;
   return value > 3 ? value / 100 : value;
 }
 
@@ -64,8 +64,8 @@ export function formatHeightMeters(height) {
 
 export function calcBMI(weight, height) {
   const h = normalizeHeightMeters(height);
-  const w = parseFloat(weight);
-  if (!h || !w || h <= 0 || w <= 0) return null;
+  const w = Number(weight);
+  if (!h || !Number.isFinite(w) || w <= 0) return null;
   return w / (h * h);
 }
 
@@ -107,7 +107,7 @@ export function getBMIStatus(
   measurementDate,
   fallbackMonths,
 ) {
-  if (bmi == null) return null;
+  if (!Number.isFinite(bmi) || bmi <= 0) return null;
 
   const legacyFallbackMonths =
     typeof measurementDate === 'number' ? measurementDate : fallbackMonths;
@@ -164,6 +164,7 @@ export function getHAZStatus(
   if (months == null) return null;
 
   const h           = normalizeHeightCm(heightCm);
+  if (h == null) return null;
   const table       = sex === 'F' ? HAZ_TABLE_GIRLS : HAZ_TABLE_BOYS;
   const clampMonths = Math.max(36, Math.min(228, months));
   const row         = table[clampMonths];

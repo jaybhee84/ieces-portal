@@ -1,5 +1,5 @@
 import { usePrintPreview } from "./PrintPreview/PrintPreviewContext";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus, Printer, RotateCcw, Save } from "lucide-react";
 import { loadAdvisoryRoster } from "../lib/advisoryRosterData";
 import { supabase } from "../lib/supabase";
@@ -7,6 +7,16 @@ import { learnerDisplayName, learnerGenderLabel, learnerLrn } from "../lib/learn
 import educationSeal from "../image/deped.png";
 import depedLogo from "../image/deped-logo.gif";
 import "../styles/Form137.css";
+import { Form137Grades } from "./Form137Grades";
+import { withForm137Remarks } from "../lib/form137Remarks.mjs";
+import { CURRICULUM_GROUPS, emptySubject, subjectsForGrade } from "../lib/elementaryLearningAreas.mjs";
+import { adviserGradeKey } from "../lib/orgAdvisers";
+
+export const adviserRecordIndex = (records, grade) => {
+  const assignedGrade = adviserGradeKey(grade);
+  if (!/^[1-6]$/.test(assignedGrade)) return 0;
+  return Math.max(0, records.findIndex((record) => adviserGradeKey(record.grade) === assignedGrade));
+};
 
 const SCHOOL_DEFAULTS = {
   school: "ISABELA EAST CENTRAL E/S",
@@ -30,20 +40,6 @@ const currentPrincipalName = () =>
 const SCHOLASTIC_RECORD_SLOTS = 8;
 const ELEMENTARY_GRADES = ["1", "2", "3", "4", "5", "6"];
 
-const GRADE_ONE_SUBJECTS = [
-  "Good Manners and Right Conduct (GMRC)",
-  "Language",
-  "Mathematics",
-  "Reading and Literacy",
-  "Makabansa",
-  "",
-  "",
-  "",
-  "",
-  "*Arabic Language",
-  "*Islamic Values Education",
-];
-
 const REGULAR_SUBJECTS = [
   "Mother Tongue",
   "Filipino",
@@ -63,7 +59,7 @@ const REGULAR_SUBJECTS = [
 ];
 
 const SUBJECT_OPTIONS = Array.from(new Set([
-  ...GRADE_ONE_SUBJECTS,
+  ...CURRICULUM_GROUPS.slice(1).flatMap((group) => group.areas),
   ...REGULAR_SUBJECTS,
   "Character Education",
   "Civics and Culture",
@@ -74,8 +70,6 @@ const SUBJECT_OPTIONS = Array.from(new Set([
   "Sibika at Kultura",
 ])).filter(Boolean).sort((left, right) => left.localeCompare(right));
 
-const emptySubject = (name) => ({ name, q1: "", q2: "", q3: "", q4: "", final: "", remarks: "" });
-
 const emptyRecord = (grade = "") => ({
   grade: String(grade),
   ...SCHOOL_DEFAULTS,
@@ -83,7 +77,7 @@ const emptyRecord = (grade = "") => ({
   schoolYear: "",
   adviser: "",
   signature: "",
-  subjects: (String(grade) === "1" ? GRADE_ONE_SUBJECTS : REGULAR_SUBJECTS).map(emptySubject),
+  subjects: subjectsForGrade(grade),
   generalAverage: "",
   remedialFrom: "",
   remedialTo: "",
@@ -233,10 +227,10 @@ const fillFormFromLearner = (savedData, learner, profile) => {
   };
 };
 
-const Input = ({ label, value, onChange, type = "text", className = "" }) => (
+const Input = ({ label, value, onChange, type = "text", className = "", readOnly = false }) => (
   <label className={`f137-field ${className}`}>
     <span>{label}</span>
-    <input type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+    <input type={type} value={value} readOnly={readOnly || !navigator.onLine} onChange={(event) => onChange(event.target.value)} />
   </label>
 );
 
@@ -255,7 +249,7 @@ function RecordBlock({ record }) {
         <thead><tr><th rowSpan="2">LEARNING AREAS</th><th colSpan="4">Quarterly Rating</th><th rowSpan="2">Final<br />Rating</th><th rowSpan="2">Remarks</th></tr><tr><th>1</th><th>2</th><th>3</th><th>4</th></tr></thead>
         <tbody>
           {record.subjects.map((subject, index) => (
-            <tr key={`${subject.name}-${index}`} className={index >= 8 && index <= 11 && record.grade !== "1" ? "f137-subject-child" : ""}>
+            <tr key={`${subject.name}-${index}`} className={["Music", "Arts", "Physical Education", "Health", "Music and Arts", "Physical Education and Health"].includes(subject.name) ? "f137-subject-child" : ""}>
               <td>{subject.name || "\u00a0"}</td><td>{subject.q1}</td><td>{subject.q2}</td><td>{subject.q3}</td><td>{subject.q4}</td><td>{subject.final}</td><td>{subject.remarks}</td>
             </tr>
           ))}
@@ -325,10 +319,21 @@ export function Form137({ profile }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [editorTab, setEditorTab] = useState(EDITOR_TABS[0]);
-  const [recordIndex, setRecordIndex] = useState(0);
+  const [recordIndex, setRecordIndex] = useState(() => adviserRecordIndex(form.records, profile?.grade_level_assigned));
   const [certIndex, setCertIndex] = useState(0);
-  const [previewZoom, setPreviewZoom] = useState(1.5);
+  const [previewZoom, setPreviewZoom] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [learnerLoading, setLearnerLoading] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const learnerRequest = useRef(0);
+  useEffect(() => () => { learnerRequest.current += 1; }, []);
+  const [showOutput, setShowOutput] = useState(false);
+  const completedForm = useMemo(() => withForm137Remarks(form), [form]);
+
+  useEffect(() => {
+    // Select the assigned grade when changing learners, without interrupting manual navigation.
+    setRecordIndex(adviserRecordIndex(form.records, profile?.grade_level_assigned));
+  }, [profile?.id, profile?.grade_level_assigned, form.learnerId]);
 
   const draftKey = useMemo(() => `ieces:form137:${CURRENT_SCHOOL_YEAR}:${profile?.id || "user"}:${form.learnerId || "new"}`, [profile?.id, form.learnerId]);
 
@@ -357,14 +362,19 @@ export function Form137({ profile }) {
   const updateField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
   const selectLearner = async (learnerId) => {
+    const requestId = ++learnerRequest.current;
     const learner = students.find((item) => String(item.id) === learnerId);
-    if (!learner) { setForm(initialForm()); setMessage(""); return; }
+    if (!learner) { setForm(initialForm()); setLoadFailed(false); setLearnerLoading(false); setMessage(""); return; }
+    setLearnerLoading(true);
+    setLoadFailed(false);
     setMessage("Loading the learner's cumulative Form 137 record...");
-
+    try {
     const { data: savedRecord, error: loadError } = await supabase.rpc(
       "get_current_student_form_137",
       { p_student_id: learnerId },
     );
+    if (requestId !== learnerRequest.current) return;
+    if (loadError && navigator.onLine) setLoadFailed(true);
     if (!loadError && savedRecord?.data) {
       setForm(fillFormFromLearner(savedRecord.data, learner, profile));
       setMessage("The learner's cumulative Form 137 record was loaded.");
@@ -374,10 +384,12 @@ export function Form137({ profile }) {
     // At the start of a new school year, carry forward the latest cumulative
     // permanent record instead of starting the learner again with a blank form.
     if (!loadError) {
-      const { data: history } = await supabase.rpc(
+      const { data: history, error: historyError } = await supabase.rpc(
         "get_student_form_137_history",
         { p_student_id: learnerId },
       );
+      if (requestId !== learnerRequest.current) return;
+      if (historyError) throw historyError;
       const latestEntry = Object.entries(history || {})
         .filter(([, entry]) => entry?.data)
         .sort(([left], [right]) => right.localeCompare(left))[0];
@@ -388,9 +400,11 @@ export function Form137({ profile }) {
       }
     }
 
-    const saved = localStorage.getItem(
+    let saved;
+    try { saved = localStorage.getItem(
       `ieces:form137:${CURRENT_SCHOOL_YEAR}:${profile?.id || "user"}:${learnerId}`,
-    ) || localStorage.getItem(`ieces:form137:${profile?.id || "user"}:${learnerId}`);
+    ) || localStorage.getItem(`ieces:form137:${profile?.id || "user"}:${learnerId}`); }
+    catch { /* Online records do not depend on offline storage. */ }
     if (saved) {
       try {
         const draft = JSON.parse(saved);
@@ -403,8 +417,13 @@ export function Form137({ profile }) {
     }
     setForm(fillFormFromLearner(initialForm(), learner, profile));
     setMessage(loadError
-      ? "New form started. Deploy the Form 137 SQL migration to enable database saving."
+      ? "The saved record could not be loaded. Reload the learner after restoring the database connection before saving."
       : `New Form 137 started for SY ${CURRENT_SCHOOL_YEAR}.`);
+    } catch (error) {
+      if (requestId === learnerRequest.current) { setForm(fillFormFromLearner(initialForm(), learner, profile)); setLoadFailed(true); setMessage(`Could not load Form 137: ${error.message}. Saving is blocked to protect the existing record.`); }
+    } finally {
+      if (requestId === learnerRequest.current) setLearnerLoading(false);
+    }
   };
 
   const updateRecord = (field, value) => setForm((current) => ({ ...current, records: current.records.map((record, index) => index === recordIndex ? { ...record, [field]: value } : record) }));
@@ -414,11 +433,7 @@ export function Form137({ profile }) {
       ? {
           ...record,
           grade,
-          subjects: (grade === "1" ? GRADE_ONE_SUBJECTS : REGULAR_SUBJECTS).map((name, subjectIndex) => ({
-            ...emptySubject(name),
-            ...(record.subjects?.[subjectIndex] || {}),
-            name,
-          })),
+          subjects: subjectsForGrade(grade, record.subjects),
         }
       : record),
   }));
@@ -427,6 +442,10 @@ export function Form137({ profile }) {
   const updateCertification = (field, value) => setForm((current) => ({ ...current, certifications: current.certifications.map((item, index) => index === certIndex ? { ...item, [field]: value } : item) }));
 
   const saveDraft = async () => {
+    if (learnerLoading || loadFailed || !navigator.onLine) {
+      setMessage('Load the learner successfully while online before saving.');
+      return;
+    }
     if (!form.learnerId) {
       setMessage("Select a learner before saving Form 137.");
       return;
@@ -434,14 +453,16 @@ export function Form137({ profile }) {
 
     setSaving(true);
     setMessage("");
-    const { error } = await supabase.rpc("save_current_student_form_137", {
+    try {
+    const { data, error } = await supabase.rpc("save_current_student_form_137", {
       p_student_id: form.learnerId,
-      p_form_data: form,
+      p_form_data: completedForm,
     });
-    if (error) {
-      setMessage(`Form 137 was not saved: ${error.message}`);
-    } else {
-      localStorage.setItem(draftKey, JSON.stringify(form));
+    if (error) throw error;
+    if (!data?.data) throw new Error('The server did not confirm that the record was saved.');
+      let backupAvailable = true;
+      try { localStorage.setItem(draftKey, JSON.stringify(completedForm)); }
+      catch { backupAvailable = false; }
       window.dispatchEvent(
         new CustomEvent("ieces:students-updated", {
           detail: {
@@ -456,18 +477,21 @@ export function Form137({ profile }) {
           },
         }),
       );
-      setMessage(`Cumulative Form 137 saved, including its Grades 1-6 history (snapshot: SY ${CURRENT_SCHOOL_YEAR}).`);
-    }
-    setSaving(false);
+      setMessage(`Cumulative Form 137 saved to Supabase, including its Grades 1-6 history (snapshot: SY ${CURRENT_SCHOOL_YEAR}).${backupAvailable ? "" : " The offline backup could not be stored on this device."}`);
+    } catch (error) { setMessage(`Form 137 was not saved: ${error.message}`); }
+    finally { setSaving(false); }
   };
 
   const clearDraft = () => {
-    localStorage.removeItem(draftKey);
+    learnerRequest.current += 1;
+    try { localStorage.removeItem(draftKey); } catch { /* Clearing the editor does not depend on offline storage. */ }
+    setLoadFailed(false);
+    setLearnerLoading(false);
     setForm(initialForm());
     setMessage("Form cleared.");
   };
 
-  const currentRecord = form.records[recordIndex];
+  const currentRecord = completedForm.records[recordIndex];
   const currentCert = form.certifications[certIndex];
   const changeZoom = (direction) => setPreviewZoom((current) => {
     const next = Math.round((current + direction * 0.1) * 10) / 10;
@@ -484,47 +508,66 @@ export function Form137({ profile }) {
     <div className="f137-root" data-print-paper="Legal" data-print-margin="0">
       <div className="f137-toolbar">
         <div><h2>Form 137</h2><p>SF10-ES cumulative elementary permanent record • Grades 1-6</p></div>
-        <div className="f137-actions"><button type="button" title="Clear form" onClick={clearDraft} disabled={saving}><RotateCcw size={16} /> Clear</button><button type="button" onClick={saveDraft} disabled={saving || !form.learnerId}><Save size={16} /> {saving ? "Saving..." : "Save Information"}</button><button type="button" className="primary" onClick={() => requestPrint()}><Printer size={16} /> Print</button></div>
+        <div className="f137-actions"><button type="button" title="Clear form" onClick={clearDraft} disabled={saving || learnerLoading}><RotateCcw size={16} /> Clear</button><button type="button" onClick={saveDraft} disabled={saving || learnerLoading || loadFailed || !form.learnerId || !navigator.onLine}><Save size={16} /> {saving ? "Saving..." : "Save Information"}</button><button type="button" className="primary" onClick={() => requestPrint()}><Printer size={16} /> Print</button></div>
       </div>
-      {message && <div className="f137-message">{message}</div>}
-      <section className="f137-editor">
-        <div className="f137-editor-tabs" role="tablist">{EDITOR_TABS.map((tab) => <button key={tab} type="button" className={editorTab === tab ? "active" : ""} onClick={() => setEditorTab(tab)}>{tab}</button>)}</div>
+      {message && <div className="f137-message" role="status">{message}</div>}
+      {loadFailed && <button type="button" onClick={() => selectLearner(form.learnerId)}>Reload saved record</button>}
+      <div className="f137-view-switch" aria-label="Form 137 view">
+        <button type="button" aria-pressed={!showOutput} onClick={() => setShowOutput(false)}>Enter information</button>
+        <button type="button" aria-pressed={showOutput} onClick={() => setShowOutput(true)}>View Form 137</button>
+      </div>
+      {!showOutput && <details className="f137-curriculum-reference">
+        <summary>DepEd learning areas: Kindergarten to Grade 6</summary>
+        <p>Key Stage 1 includes Kindergarten to Grade 3. Key Stage 2 covers Grades 4–6. Kindergarten uses developmental assessment; its eligibility documents are entered under Enrollment, not as numeric SF10 grades.</p>
+        <div>{CURRICULUM_GROUPS.map((group) => <section key={group.label}><h3>{group.label}</h3><ul>{group.areas.map((area) => <li key={area}>{area}</li>)}</ul></section>)}</div>
+        <p>MAPEH includes Music and Arts, and Physical Education and Health. Legacy subjects remain available for historical records.</p>
+      </details>}
+      <section className="f137-editor" hidden={showOutput}>
+        <div className="f137-editor-tabs">{EDITOR_TABS.map((tab) => <button key={tab} type="button" aria-pressed={editorTab === tab} className={editorTab === tab ? "active" : ""} onClick={() => setEditorTab(tab)}>{tab}</button>)}</div>
+        <fieldset className="f137-editor-fields" disabled={saving || learnerLoading || loadFailed}>
         {editorTab === "Learner" && <div className="f137-input-grid">
-          <label className="f137-field f137-wide"><span>Advisory learner</span><select value={form.learnerId} disabled={loading} onChange={(event) => selectLearner(event.target.value)}><option value="">{loading ? "Loading learners..." : "Select a learner"}</option>{students.map((student) => <option key={student.id} value={String(student.id)}>{learnerDisplayName(student)} - {learnerLrn(student)}</option>)}</select></label>
+          <label className="f137-field f137-wide"><span>Advisory learner</span><select value={form.learnerId} disabled={loading || learnerLoading || saving} onChange={(event) => selectLearner(event.target.value)}><option value="">{loading ? "Loading learners..." : "Select a learner"}</option>{students.map((student) => <option key={student.id} value={String(student.id)}>{learnerDisplayName(student)} - {learnerLrn(student)}</option>)}</select></label>
           <Input label="Last name" value={form.lastName} onChange={(value) => updateField("lastName", value.toUpperCase())} /><Input label="First name" value={form.firstName} onChange={(value) => updateField("firstName", value.toUpperCase())} /><Input label="Middle name" value={form.middleName} onChange={(value) => updateField("middleName", value.toUpperCase())} /><Input label="Name extension" value={form.extension} onChange={(value) => updateField("extension", value.toUpperCase())} />
           <Input label="LRN" value={form.lrn} onChange={(value) => updateField("lrn", value.replace(/\D/g, "").slice(0, 13))} /><Input label="Birthdate" type="date" value={form.birthdate} onChange={(value) => updateField("birthdate", value)} />
-          <label className="f137-field"><span>Sex</span><select value={form.sex} onChange={(event) => updateField("sex", event.target.value)}><option value="">Select</option><option>MALE</option><option>FEMALE</option></select></label>
+          <label className="f137-field"><span>Sex</span><select disabled={!navigator.onLine} value={form.sex} onChange={(event) => updateField("sex", event.target.value)}><option value="">Select</option><option>MALE</option><option>FEMALE</option></select></label>
         </div>}
         {editorTab === "Enrollment" && <div className="f137-input-grid">
-          <label className="f137-field f137-wide"><span>Credential presented</span><select value={form.credential} onChange={(event) => updateField("credential", event.target.value)}><option value="kinder_progress">Kinder Progress Report</option><option value="eccd">ECCD Checklist</option><option value="kinder_certificate">Kindergarten Certificate of Completion</option><option value="other">Other credential</option></select></label>
+          <label className="f137-field f137-wide"><span>Credential presented</span><select disabled={!navigator.onLine} value={form.credential} onChange={(event) => updateField("credential", event.target.value)}><option value="kinder_progress">Kinder Progress Report</option><option value="eccd">ECCD Checklist</option><option value="kinder_certificate">Kindergarten Certificate of Completion</option><option value="other">Other credential</option></select></label>
           <Input label="Name of school" value={form.enrollmentSchool} onChange={(value) => updateField("enrollmentSchool", value)} /><Input label="School ID" value={form.enrollmentSchoolId} onChange={(value) => updateField("enrollmentSchoolId", value)} /><Input className="f137-wide" label="School address" value={form.enrollmentAddress} onChange={(value) => updateField("enrollmentAddress", value)} />
           <Input label="Other credential" value={form.otherCredential} onChange={(value) => updateField("otherCredential", value)} /><Input label="PEPT rating" value={form.peptRating} onChange={(value) => updateField("peptRating", value)} /><Input label="Assessment date" type="date" value={form.assessmentDate} onChange={(value) => updateField("assessmentDate", value)} /><Input label="Testing center" value={form.testingCenter} onChange={(value) => updateField("testingCenter", value)} /><Input label="Remark" value={form.otherRemark} onChange={(value) => updateField("otherRemark", value)} />
         </div>}
         {editorTab === "Scholastic Records" && <>
           <div className="f137-record-note"><strong>How this section works:</strong> Kindergarten is documented under Enrollment Eligibility above. Enter final academic records for Grades 1-6 here. The extra entry spaces are for transfers or repeated grade levels.</div>
           <div className="f137-record-selector"><button type="button" title="Previous scholastic record" onClick={() => setRecordIndex((index) => Math.max(0, index - 1))} disabled={recordIndex === 0}><ChevronLeft size={16} /></button><strong>Record {recordIndex + 1} of {form.records.length}{currentRecord.grade ? ` • Grade ${currentRecord.grade}` : " • Additional entry"}</strong><button type="button" title="Next scholastic record" onClick={() => setRecordIndex((index) => Math.min(form.records.length - 1, index + 1))} disabled={recordIndex === form.records.length - 1}><ChevronRight size={16} /></button></div>
-          <div className="f137-input-grid f137-record-fields"><label className="f137-field"><span>Classified as grade</span><select value={currentRecord.grade} onChange={(event) => updateRecordGrade(event.target.value)}><option value="">Select grade</option>{ELEMENTARY_GRADES.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label><Input label="School" value={currentRecord.school} onChange={(value) => updateRecord("school", value)} /><Input label="School ID" value={currentRecord.schoolId} onChange={(value) => updateRecord("schoolId", value)} /><Input label="District" value={currentRecord.district} onChange={(value) => updateRecord("district", value)} /><Input label="Division" value={currentRecord.division} onChange={(value) => updateRecord("division", value)} /><Input label="Region" value={currentRecord.region} onChange={(value) => updateRecord("region", value)} /><Input label="Section" value={currentRecord.section} onChange={(value) => updateRecord("section", value)} /><Input label="School year" value={currentRecord.schoolYear} onChange={(value) => updateRecord("schoolYear", value)} /><Input label="Adviser/teacher" value={currentRecord.adviser} onChange={(value) => updateRecord("adviser", value)} /></div>
+          <div className="f137-input-grid f137-record-fields"><label className="f137-field"><span>Classified as grade</span><select disabled={!navigator.onLine} value={currentRecord.grade} onChange={(event) => updateRecordGrade(event.target.value)}><option value="">Select grade</option>{ELEMENTARY_GRADES.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label><Input label="School" value={currentRecord.school} onChange={(value) => updateRecord("school", value)} /><Input label="School ID" value={currentRecord.schoolId} onChange={(value) => updateRecord("schoolId", value)} /><Input label="District" value={currentRecord.district} onChange={(value) => updateRecord("district", value)} /><Input label="Division" value={currentRecord.division} onChange={(value) => updateRecord("division", value)} /><Input label="Region" value={currentRecord.region} onChange={(value) => updateRecord("region", value)} /><Input label="Section" value={currentRecord.section} onChange={(value) => updateRecord("section", value)} /><Input label="School year" value={currentRecord.schoolYear} onChange={(value) => updateRecord("schoolYear", value)} /><Input label="Adviser/teacher" value={currentRecord.adviser} onChange={(value) => updateRecord("adviser", value)} /></div>
           <p className="f137-subject-help">Select a learning area from the list or type the exact subject name used in the learner's curriculum.</p>
+          <div className="f137-learning-area-actions">
+            <button type="button" disabled={!currentRecord.grade || !navigator.onLine} onClick={() => updateRecord("subjects", subjectsForGrade(currentRecord.grade, currentRecord.subjects))}>Use current learning areas</button>
+            <button type="button" disabled={!navigator.onLine} onClick={() => updateRecord("subjects", [...currentRecord.subjects, emptySubject("")])}>Add learning area</button>
+          </div>
           <datalist id="f137-subject-options">{SUBJECT_OPTIONS.map((subject) => <option key={subject} value={subject} />)}</datalist>
-          <div className="f137-grade-entry-wrap"><table className="f137-grade-entry"><thead><tr><th>Learning area</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Final</th><th>Remarks</th></tr></thead><tbody>{currentRecord.subjects.map((subject, index) => <tr key={index}><td><input list="f137-subject-options" value={subject.name} placeholder="Select or type a subject" aria-label={`Learning area ${index + 1}`} onChange={(event) => updateSubject(index, "name", event.target.value)} /></td>{["q1", "q2", "q3", "q4", "final"].map((field) => <td key={field}><input inputMode="numeric" value={subject[field]} aria-label={`${subject.name || `Row ${index + 1}`} ${field}`} onChange={(event) => updateSubject(index, field, event.target.value.replace(/[^0-9.]/g, "").slice(0, 5))} /></td>)}<td><input value={subject.remarks} aria-label={`${subject.name || `Row ${index + 1}`} remarks`} onChange={(event) => updateSubject(index, "remarks", event.target.value)} /></td></tr>)}</tbody></table></div>
+          <Form137Grades key={`${recordIndex}-${currentRecord.grade}`} subjects={currentRecord.subjects} onChange={updateSubject} />
           <div className="f137-input-grid f137-record-footer"><Input label="General average" value={currentRecord.generalAverage} onChange={(value) => updateRecord("generalAverage", value)} /><Input label="Remedial conducted from" type="date" value={currentRecord.remedialFrom} onChange={(value) => updateRecord("remedialFrom", value)} /><Input label="To" type="date" value={currentRecord.remedialTo} onChange={(value) => updateRecord("remedialTo", value)} /></div>
-          <div className="f137-grade-entry-wrap f137-remedial-entry"><table className="f137-grade-entry"><thead><tr><th>Remedial learning area</th><th>Final rating</th><th>Remedial mark</th><th>Recomputed grade</th><th>Remarks</th></tr></thead><tbody>{currentRecord.remedial.map((row, index) => <tr key={index}>{["area", "final", "mark", "recomputed", "remarks"].map((field) => <td key={field}><input value={row[field]} aria-label={`Remedial row ${index + 1} ${field}`} onChange={(event) => updateRemedial(index, field, event.target.value)} /></td>)}</tr>)}</tbody></table></div>
+          <div className="f137-remedial-cards">{currentRecord.remedial.map((row, index) => <fieldset key={index} className="f137-remedial-card"><legend>Remedial class {index + 1}</legend><div className="f137-input-grid">{[["area", "Learning area"], ["final", "Final rating"], ["mark", "Remedial mark"], ["recomputed", "Recomputed grade"], ["remarks", "Remarks"]].map(([field, label]) => <Input key={field} label={label} value={row[field]} readOnly={field === "remarks"} onChange={(value) => updateRemedial(index, field, value)} />)}</div></fieldset>)}</div>
         </>}
         {editorTab === "Certification" && <>
           <div className="f137-record-selector"><button type="button" title="Previous certification" onClick={() => setCertIndex((index) => Math.max(0, index - 1))} disabled={certIndex === 0}><ChevronLeft size={16} /></button><strong>Certification {certIndex + 1}</strong><button type="button" title="Next certification" onClick={() => setCertIndex((index) => Math.min(2, index + 1))} disabled={certIndex === 2}><ChevronRight size={16} /></button></div>
           <div className="f137-input-grid"><Input label="Eligible for Grade" value={currentCert.grade} onChange={(value) => updateCertification("grade", value)} /><Input label="School name" value={currentCert.schoolName} onChange={(value) => updateCertification("schoolName", value)} /><Input label="School ID" value={currentCert.schoolId} onChange={(value) => updateCertification("schoolId", value)} /><Input label="Division" value={currentCert.division} onChange={(value) => updateCertification("division", value)} /><Input label="Last school year attended" value={currentCert.lastSchoolYear} onChange={(value) => updateCertification("lastSchoolYear", value)} /><Input label="Date" type="date" value={currentCert.date} onChange={(value) => updateCertification("date", value)} /><Input className="f137-wide" label="Principal/School Head" value={currentCert.principal} onChange={(value) => updateCertification("principal", value)} /></div>
         </>}
+        </fieldset>
       </section>
+      <div className="f137-output" hidden={!showOutput}>
       <div className="f137-preview-heading">
-        <div><h3>Form Preview</h3><span>Legal size, portrait - 2 pages</span></div>
+        <div><h3>Form 137 output</h3><span>Read-only · Legal size, portrait · 2 pages</span></div>
         <div className="f137-zoom-controls" aria-label="Preview zoom controls">
           <button type="button" title="Zoom out" onClick={() => changeZoom(-1)} disabled={previewZoom <= 0.4}><Minus size={15} /></button>
-          <button type="button" className="f137-zoom-value" title="Reset zoom" onClick={() => setPreviewZoom(1.5)}>{Math.round(previewZoom * 100)}%</button>
+          <button type="button" className="f137-zoom-value" title="Reset zoom" onClick={() => setPreviewZoom(1)}>{Math.round(previewZoom * 100)}%</button>
           <button type="button" title="Zoom in" onClick={() => changeZoom(1)} disabled={previewZoom >= 1.5}><Plus size={15} /></button>
         </div>
       </div>
       <div className="f137-preview-scroll" onWheel={handlePreviewWheel}>
-        <div className="f137-zoom-stage" style={{ zoom: previewZoom }}><FormPages form={form} /></div>
+        <div className="f137-zoom-stage" style={{ zoom: previewZoom }}><FormPages form={completedForm} /></div>
+      </div>
       </div>
     </div>
   );

@@ -1,0 +1,59 @@
+.mobile-menu-toggle { display: none; }
+.portal-app { display: flex; flex-direction: column; height: 100dvh; }
+.portal-app > .dash-root, .portal-app > .login-root { flex: 1; min-height: 0; height: auto; }
+.offline-banner {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  background: #fff0c2;
+  color: #4f3600;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .dash-root, .login-root { height: 100dvh; }
+  .login-card {
+    background: #fffaf7;
+    padding: 24px;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .dash-header {
+    height: auto;
+    min-height: 64px;
+    padding: 8px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .mobile-menu-toggle {
+    display: grid;
+    place-items: center;
+    min-width: 44px;
+    min-height: 44px;
+    color: white;
+    background: transparent;
+    border: 1px solid #ffffff55;
+    border-radius: 8px;
+  }
+  .dash-header-brand { gap: 8px; min-width: 0; }
+  .dash-header-brand p, .user-avatar, .user-details { display: none; }
+  .dash-header-user { margin-left: auto; gap: 8px; flex-wrap: wrap; }
+  .dash-logout-btn, .dash-switch-user-btn { min-height: 44px; padding: 8px; }
+  .dash-body { flex-direction: column; min-height: 0; }
+  .dash-sidebar { display: none; width: 100%; max-height: 45dvh; overflow-y: auto; }
+  .dash-sidebar.is-open { display: flex; }
+  .sidebar-menu { width: 100%; }
+  .nav-item { min-height: 44px; }
+  .dash-content { min-height: 0; min-width: 0; padding: 12px; overflow: auto; }
+  .dash-card { padding: 16px; min-width: 0; }
+  .dash-card-header { flex-wrap: wrap; gap: 12px; }
+  .teacher-profile-summary { align-items: flex-start; flex-wrap: wrap; }
+  .teacher-profile-groups { grid-template-columns: minmax(0, 1fr); }
+  .teacher-profile-form { grid-template-columns: minmax(0, 1fr); }
+  .teacher-profile-group dd { overflow-wrap: anywhere; }
+  .teacher-profile-upload { flex-wrap: wrap; }
+  .dash-content input, .dash-content select, .dash-content textarea,
+  .login-right input, .login-right select { font-size: 16px; min-height: 44px; }
+  .dash-content button { min-height: 44px; }
+  .admin-test-card { width: calc(100vw - 24px); max-height: 90dvh; overflow: auto; }
+}

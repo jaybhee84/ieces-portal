@@ -1,0 +1,61 @@
+.kinder-root { color: #211b1b; }
+.kinder-editor-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.kinder-editor-fields > p { font-size: .85rem; margin: 12px 0 16px; color: #684f4f; }
+.kinder-storage-note { font-size: .8rem; color: #684f4f; margin-bottom: 16px; }
+.kinder-unsaved { color: #7b1a1a; font-size: .85rem; margin-bottom: 12px; font-weight: 700; }
+.kinder-selector { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; }
+.kinder-term-picker { display: flex; gap: 12px; margin: 24px 0 12px; }
+.kinder-term-picker button { min-height: 44px; padding: 8px 16px; border: 1px solid #d8c9c3; border-radius: 8px; background: #fff; color: #7b1a1a; cursor: pointer; }
+.kinder-term-picker button[aria-pressed="true"] { background: #7b1a1a; color: #fff; }
+.kinder-root .f137-editor > p { font-size: .85rem; margin-bottom: 16px; color: #684f4f; }
+.kinder-competency-editor { margin: 16px 0 24px; }
+.kinder-competency-editor > label { display: grid; grid-template-columns: minmax(0, 1fr) 180px; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid #e2d7d2; }
+.kinder-competency-editor select, .kinder-comments textarea { border: 1px solid #d8c9c3; border-radius: 6px; padding: 10px; background: #fff; color: #271919; min-height: 44px; }
+.kinder-comments textarea { resize: vertical; }
+.kinder-attendance-heading { margin: 24px 0 8px; font-weight: 700; }
+.kinder-attendance-editor { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+.kinder-attendance-editor fieldset { padding: 16px; border: 1px solid #d8c9c3; border-radius: 8px; }
+.kinder-attendance-editor legend { padding: 0 8px; font-weight: 700; }
+.kinder-attendance-editor label { margin-bottom: 12px; }
+.kinder-transfer-option { display: flex; align-items: start; gap: 12px; margin-top: 24px; font-size: .85rem; }
+.kinder-transfer-option input { min-width: 20px; }
+.kinder-root select:focus-visible, .kinder-root textarea:focus-visible, .kinder-term-picker button:focus-visible { outline: 2px solid #7b1a1a; outline-offset: 2px; }
+.kinder-output { overflow-x: auto; background: #d6d1ce; padding: 24px; }
+.kinder-paper-pages { width: 816px; margin: auto; }
+.kinder-paper { position: relative; box-sizing: border-box; width: 816px; min-height: 1344px; padding: 32px; background: #fff; color: #000; font: 11px/1.3 Arial, sans-serif; }
+.kinder-paper + .kinder-paper { margin-top: 24px; }
+.kinder-paper-header { display: grid; grid-template-columns: 70px 1fr 70px; align-items: center; text-align: center; margin: 0 120px 20px; }
+.kinder-paper-header img { width: 60px; height: 60px; object-fit: contain; }
+.kinder-paper h1 { font-size: 15px; margin: 12px 0 4px; font-weight: 700; }
+.kinder-paper h2 { font-size: 12px; font-weight: 700; margin-bottom: 20px; }
+.kinder-paper h3 { font-weight: 700; margin: 16px 0 8px; font-size: 12px; }
+.kinder-paper-identity { display: flex; gap: 8px 20px; flex-wrap: wrap; margin-bottom: 12px; }
+.kinder-paper-identity span:first-child { width: 65%; }
+.kinder-parent-note { border: 1px solid #444; padding: 8px; margin-bottom: 16px; }
+.kinder-paper-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.kinder-paper-columns > div { min-width: 0; }
+.kinder-ratings-table, .kinder-attendance-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
+.kinder-ratings-table caption { text-align: start; font-weight: 700; padding: 6px; border: 1px solid #444; background: #eee; }
+.kinder-ratings-table th, .kinder-ratings-table td, .kinder-attendance-table th, .kinder-attendance-table td { border: 1px solid #444; padding: 4px; overflow-wrap: anywhere; }
+.kinder-ratings-table th:not(:first-child), .kinder-ratings-table td:not(:first-child) { width: 24px; text-align: center; padding: 2px; }
+.kinder-ratings-table th:first-child { text-align: start; }
+.kinder-ratings-table { margin-bottom: 12px; }
+.kinder-paper footer { position: absolute; bottom: 16px; left: 32px; right: 32px; text-align: center; font-size: 9px; color: #444; }
+.kinder-term-comment { border: 1px solid #444; padding: 12px; margin: 16px 0; break-inside: avoid; }
+.kinder-term-comment h4 { text-align: center; font-weight: 700; }
+.kinder-term-comment p { min-height: 190px; white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px 0; }
+.kinder-rating-guide dt { font-weight: 700; margin-top: 12px; }
+.kinder-rating-guide dd { margin: 4px 0 0; }
+.kinder-transfer p { margin: 16px 0; text-align: center; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .kinder-selector { grid-template-columns: minmax(0, 1fr); }
+  .kinder-competency-editor > label { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .kinder-output { padding: 12px; }
+}
+@media print {
+  .kinder-root > :not(.kinder-output) { display: none !important; }
+  .kinder-output[hidden], .kinder-output { display: block !important; overflow: visible !important; background: white; padding: 0; }
+  .kinder-paper-pages { width: 8.5in; margin: 0; }
+  .kinder-paper { width: 8.5in; height: 14in; min-height: 0; padding: .33in; break-after: page; margin: 0 !important; }
+  .kinder-paper:last-child { break-after: auto; }
+}
