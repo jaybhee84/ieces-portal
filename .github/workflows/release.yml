@@ -115,6 +115,7 @@ jobs:
   # checks this repository. Remove this job once no old installs remain.
   mirror-to-buzzjay84:
     needs: [check-version, publish-release]
+    if: always() && needs.check-version.result == 'success' && (needs.publish-release.result == 'success' || needs.check-version.outputs.release == 'false')
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ needs.check-version.outputs.tag }}
@@ -125,8 +126,10 @@ jobs:
         shell: bash
         run: |
           gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" --dir assets
+          gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" --json body --jq .body > release-notes.md
           if gh release view "$RELEASE_TAG" --repo buzzjay84/ieces-portal >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" assets/* --repo buzzjay84/ieces-portal --clobber
+            gh release edit "$RELEASE_TAG" --repo buzzjay84/ieces-portal --notes-file release-notes.md
           else
-            gh release create "$RELEASE_TAG" assets/* --repo buzzjay84/ieces-portal --title "${RELEASE_TAG#v}" --notes "" --latest
+            gh release create "$RELEASE_TAG" assets/* --repo buzzjay84/ieces-portal --title "${RELEASE_TAG#v}" --notes-file release-notes.md --latest
           fi
