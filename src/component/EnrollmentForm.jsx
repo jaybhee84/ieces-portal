@@ -272,7 +272,9 @@ export function EnrollmentForm({ profile }) {
       setActiveCameraLabel(selectedCamera?.label || "Default camera");
       setIsCameraActive(true);
     } catch (err) {
-      alert("Unable to access camera: " + err.message);
+      alert(err.name === "NotAllowedError"
+        ? "Camera permission was denied. Allow Camera in your device settings for IECES Portal, then try again."
+        : "Unable to access camera: " + err.message);
     }
   };
 

@@ -62,3 +62,12 @@ is disabled. Removing the app also removes its local data.
 
 Windows automatic updates are hidden on mobile. Native printing/sharing and
 authenticated flows still need testing on real Android and iOS devices.
+
+On phones, the school scene opens first. Swipe up or tap the up-arrow to sign in.
+For superadmin sign-in, tap the school seal five times quickly; the app opens
+the superadmin form. Your account must already have superadmin access.
+Allow Camera when enrollment requests it. If previously denied, enable Camera
+in the device settings for IECES Portal, then retry.
+After regenerating icons, copy each density's ic_launcher.png to
+ic_launcher_foreground.png as well; adaptive icons use that separate resource.
+

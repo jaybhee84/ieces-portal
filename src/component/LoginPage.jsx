@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
+  ChevronUp,
   Cloud,
   CloudDrizzle,
   CloudLightning,
@@ -644,6 +645,11 @@ export default function LoginPage({ onLoginSuccess }) {
   const [appVersion, setAppVersion] = useState("");
   const weather = useLoginWeather();
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const loginPanel = useRef(null);
+  const scrollToLogin = () => loginPanel.current?.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+    block: "start",
+  });
   const logoClicks = useRef({ count: 0, last: 0 });
 
   // Hidden entry: five quick clicks on the school seal open superadmin sign-in.
@@ -655,6 +661,7 @@ export default function LoginPage({ onLoginSuccess }) {
     if (clicks.count >= 5) {
       clicks.count = 0;
       setView("superadmin");
+      scrollToLogin();
     }
   };
 
@@ -685,16 +692,16 @@ export default function LoginPage({ onLoginSuccess }) {
         <SkyBackground condition={weather?.current.condition} />
         <LoginClock weather={weather} />
         <div className="login-brand">
-          <div className="login-seal-wrapper">
+          <button type="button" className="login-seal-wrapper login-seal-button"
+            aria-label="School seal" onClick={handleLogoClick}>
             <div className="login-seal">
               <img
                 src={iecesLogo}
                 alt="IECES Logo"
                 draggable={false}
-                onClick={handleLogoClick}
               />
             </div>
-          </div>
+          </button>
 
           <h1 className="login-school">
             Isabela East Central Elementary School
@@ -708,10 +715,14 @@ export default function LoginPage({ onLoginSuccess }) {
             <span className="login-version">v{appVersion}</span>
           </div>
         )}
+        <button type="button" className="login-mobile-arrow" onClick={scrollToLogin}>
+          <ChevronUp aria-hidden="true" />
+          <span>Swipe up or tap to sign in</span>
+        </button>
       </div>
 
       {/* Right panel */}
-      <div className="login-right">
+      <div className="login-right" ref={loginPanel}>
         {/* The slideshow stays mounted behind every form so the background
             does not change when switching between sign in and register. */}
         <EnrollmentSlideshow />
