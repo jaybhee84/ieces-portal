@@ -518,7 +518,7 @@ export default function DashboardPage({ session, userSession, onLogout }) {
             {/* AUTO ID TAB */}
             {!isSubjectTeacher && (
             <button
-              className={`nav-item ${activeTab === "autoid" ? "active" : ""}`}
+              className={`nav-item nav-autoid ${activeTab === "autoid" ? "active" : ""}`}
               onClick={() => setActiveTab("autoid")}
             >
               <Contact className="nav-icon" size={18} /> AutoID

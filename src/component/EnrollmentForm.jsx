@@ -228,8 +228,12 @@ export function EnrollmentForm({ profile }) {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState(null);
   const [activeCameraLabel, setActiveCameraLabel] = useState("");
+  const [availableCameras, setAvailableCameras] = useState([]);
+  const [activeCameraId, setActiveCameraId] = useState("");
+  const [isCameraStarting, setIsCameraStarting] = useState(false);
 
-  const startCamera = async () => {
+  const startCamera = async (deviceId = activeCameraId) => {
+    setIsCameraStarting(true);
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Camera access is not supported on this machine.");
@@ -251,7 +255,8 @@ export function EnrollmentForm({ profile }) {
         cameras = devices.filter((device) => device.kind === "videoinput");
       }
 
-      const selectedCamera = [...cameras].sort(
+      setAvailableCameras(cameras);
+      const selectedCamera = cameras.find((camera) => camera.deviceId === deviceId) || [...cameras].sort(
         (a, b) => cameraPreferenceScore(b) - cameraPreferenceScore(a),
       )[0];
 
@@ -268,13 +273,20 @@ export function EnrollmentForm({ profile }) {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
+      } else {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
       }
+      setActiveCameraId(stream.getVideoTracks()[0]?.getSettings().deviceId || selectedCamera?.deviceId || "");
       setActiveCameraLabel(selectedCamera?.label || "Default camera");
       setIsCameraActive(true);
     } catch (err) {
+      stopCamera();
       alert(err.name === "NotAllowedError"
         ? "Camera permission was denied. Allow Camera in your device settings for IECES Portal, then try again."
         : "Unable to access camera: " + err.message);
+    } finally {
+      setIsCameraStarting(false);
     }
   };
 
@@ -1449,12 +1461,34 @@ export function EnrollmentForm({ profile }) {
               {!isCameraActive && !capturedPhoto && (
                 <button
                   type="button"
-                  onClick={startCamera}
+                  onClick={() => startCamera()}
+                  disabled={isCameraStarting}
                   className="enroll-btn enroll-btn-secondary"
                 >
                   <Camera size={15} aria-hidden="true" />
-                  Start Camera
+                  {isCameraStarting ? "Opening camera…" : "Start Camera"}
                 </button>
+              )}
+
+              {!capturedPhoto && availableCameras.length > 1 && (
+                <label className="text-xs text-slate-600">
+                  Camera
+                  <select
+                    className="w-full mt-1 rounded border border-slate-300 p-2 text-sm"
+                    value={activeCameraId}
+                    disabled={isCameraStarting}
+                    onChange={(event) => {
+                      setActiveCameraId(event.target.value);
+                      startCamera(event.target.value);
+                    }}
+                  >
+                    {availableCameras.map((camera, index) => (
+                      <option key={camera.deviceId} value={camera.deviceId}>
+                        {camera.label || `Camera ${index + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               )}
 
               {isCameraActive && (

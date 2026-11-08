@@ -1,8 +1,8 @@
-# IECES Portal 4.2.0
+# IECES Portal 4.2.1
 
-- Updated the phone launch screen with swipe-up and arrow access to sign-in.
-- Added access to superadmin sign-in by tapping the school seal five times quickly. An authorized superadmin account is required.
-- Fixed Android adaptive launcher icons to use the school artwork.
-- Added Android and iOS camera permission declarations and corrected enrollment camera handling.
+- Added an enrollment camera selector to switch between available front and back cameras. Retaking a photo keeps the selected camera.
+- Made the mobile swipe-up sign-in control transparent, with white text and a shadow for readability.
+- Hid the AutoID navigation tab in the mobile layout (760px wide or narrower); it remains available on desktop.
+- Remembered the last successfully used username or email on this device. Passwords are not saved, and signing out returns to the login screen.
 
 The Android download is a debug-signed test APK. Changing builds may require uninstalling the previous app, which deletes local data. iOS builds are not included. Camera and sign-in flows still need verification on real devices.

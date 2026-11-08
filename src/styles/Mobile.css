@@ -44,6 +44,7 @@
   .dash-sidebar.is-open { display: flex; }
   .sidebar-menu { width: 100%; }
   .nav-item { min-height: 44px; }
+  .nav-autoid { display: none; }
   .dash-content { min-height: 0; min-width: 0; padding: 12px; overflow: auto; }
   .dash-card { padding: 16px; min-width: 0; }
   .dash-card-header { flex-wrap: wrap; gap: 12px; }

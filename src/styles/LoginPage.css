@@ -408,8 +408,9 @@
         position: absolute;
         bottom: max(20px, env(safe-area-inset-bottom));
         z-index: 10;
-        background: #fff;
-        color: #5a1010;
+        background: transparent;
+        color: #fff;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
         border: 0;
         border-radius: 12px;
         padding: 8px 16px;

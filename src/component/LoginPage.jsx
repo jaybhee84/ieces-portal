@@ -13,6 +13,7 @@ import {
   Sun,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { loadLastLogin, saveLastLogin } from "../lib/lastLogin.mjs";
 import { fetchLoginWeather } from "../lib/loginWeather";
 import { getActiveFerries } from "../lib/ferrySchedule";
 import {
@@ -751,7 +752,7 @@ export default function LoginPage({ onLoginSuccess }) {
 
 // ── Login Form ────────────────────────────────────────────────────────────────
 function LoginForm({ superadmin = false, onGoLogin, onGoRegister, onLoginSuccess }) {
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(loadLastLogin);
   const [password, setPassword] = useState("");
   const [error, setError] = useState(() =>
     superadmin ? sessionStorage.getItem(SUPERADMIN_NOTICE_KEY) || "" : "",
@@ -839,6 +840,7 @@ function LoginForm({ superadmin = false, onGoLogin, onGoRegister, onLoginSuccess
       }
 
       signedIn = true;
+      saveLastLogin(identifier);
       if (onLoginSuccess) onLoginSuccess(authData.session);
     } catch (err) {
       setError("An unexpected error occurred. Please try again.");
@@ -865,6 +867,7 @@ function LoginForm({ superadmin = false, onGoLogin, onGoRegister, onLoginSuccess
           <input
             type="text"
             value={username}
+            autoComplete="username"
             onChange={(e) => setUsername(e.target.value)}
             placeholder={superadmin ? "superadmin" : "your_username"}
             autoFocus={superadmin}
